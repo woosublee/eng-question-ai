@@ -58,6 +58,7 @@ export default function QuestionResults({
   const [isGenerating, setIsGenerating] = useState(true)
   const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestion[]>([])
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [showRegenerationMessage, setShowRegenerationMessage] = useState(false)
 
   useEffect(() => {
     if (scrollContainerRef.current) {
@@ -69,12 +70,15 @@ export default function QuestionResults({
     if (historyItem?.status === "generating") {
       setIsGenerating(true)
       setGeneratedQuestions([])
-    } else if (historyItem?.status === "completed" && questions && questions.length > 0) {
+      setShowRegenerationMessage(false)
+    } else if (historyItem?.status === "completed") {
       setIsGenerating(false)
       setGeneratedQuestions(questions)
+      setShowRegenerationMessage(questions.length === 0)
     } else if (historyItem?.status === "failed") {
       setIsGenerating(false)
       setGeneratedQuestions([])
+      setShowRegenerationMessage(true)
     }
   }, [questions, historyItem])
 
@@ -365,9 +369,14 @@ export default function QuestionResults({
           {isGenerating ? (
             <Card className="p-8 text-center">
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-              <p className="text-gray-600">문항을 생성하고 있습니다... ({generatedQuestions.length}/{formData.count})</p>
+              <p className="text-gray-600">문항을 생성하고 있습니다... ({generatedQuestions.length}/{formData?.count || 0})</p>
             </Card>
-          ) : (
+          ) : showRegenerationMessage ? (
+            <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 py-10">
+              <p className="text-lg font-semibold mb-2">문항 데이터에 접근할 수 없습니다.</p>
+              <p>새로운 문항 생성이 필요합니다.</p>
+            </div>
+          ) : generatedQuestions.length > 0 ? (
             <div className="space-y-6">
               {generatedQuestions.map((question: GeneratedQuestion, index: number) => (
                 <Card key={question.id} className="p-6">
@@ -547,6 +556,10 @@ export default function QuestionResults({
                   )}
                 </Card>
               ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 py-10">
+              <p className="text-lg font-semibold mb-2">문항 생성을 시작해주세요.</p>
             </div>
           )}
         </div>
