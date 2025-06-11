@@ -192,62 +192,112 @@ export default function HomePage() {
       status: "generating"
     };
 
+    setHistory(prev => [newHistory, ...prev]);
+    setCurrentView("results");
+    setSelectedHistoryId(newHistory.id);
+    setCurrentFormData(formData);
+
+    // Initialize generation results for this history item
+    setGenerationResults(prev => ({
+      ...prev,
+      [newHistory.id]: { questions: [] } // Start with empty questions
+    }));
+
+    const tempQuestions: SavedQuestion[] = []; // Local array to hold questions as they arrive
+
     try {
-      setHistory(prev => [newHistory, ...prev]);
-      setCurrentView("results");
-      setSelectedHistoryId(newHistory.id);
-      setCurrentFormData(formData);
+      const questionPromises = formData.types.flatMap(typeData =>
+        Array(typeData.count).fill(null).map((_, index) => {
+          return (async () => {
+            try {
+              const response = await fetch('/api/generate-question', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  type: typeData.type,
+                  difficulty: formData.difficulty,
+                  grade: formData.grade,
+                  count: 1 // Request one question per API call
+                }),
+              });
 
-      // Call the API Route
-      const response = await fetch('/api/generate-question', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      });
+              if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to fetch question from API Route');
+              }
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch questions from API Route');
-      }
+              const question = await response.json();
+              if (!Array.isArray(question) || question.length === 0) {
+                throw new Error('API Route did not return a valid question array.');
+              }
 
-      const questions = await response.json();
-      if (!Array.isArray(questions) || questions.length === 0) {
-        throw new Error('API Route did not return valid questions.');
-      }
+              const generatedQ: SavedQuestion = {
+                ...question[0],
+                id: `generated-q${Date.now()}-${newHistory.id}-${typeData.type}-${index}`,
+                type: typeData.type,
+                difficulty: formData.difficulty,
+                grade: formData.grade,
+                memo: "" // Ensure memo field exists, even if empty
+              };
 
-      const generatedQuestions = questions.map((question, index) => ({
-        ...question,
-        id: `generated-q${Date.now()}-${newHistory.id}-${index}`,
-        difficulty: formData.difficulty,
-        grade: formData.grade,
-        memo: ""
-      }));
+              // Add to temporary array and update state incrementally
+              tempQuestions.push(generatedQ);
+              setGenerationResults(prev => ({
+                ...prev,
+                [newHistory.id]: { questions: [...tempQuestions] } // Update with new questions
+              }));
 
-      setGenerationResults(prev => ({
-        ...prev,
-        [newHistory.id]: { questions: generatedQuestions }
-      }));
+              return generatedQ; // Return the successfully generated question
+            } catch (error) {
+              console.error(`Error generating question for type ${typeData.type}, index ${index + 1}:`, error);
+              return null; // Return null for failed generations
+            }
+          })(); // Execute the async function immediately to get a Promise
+        })
+      );
 
+      // Wait for all promises to settle to determine overall status
+      const results = await Promise.allSettled(questionPromises);
+
+      const successfulQuestions = results
+        .filter((result): result is PromiseFulfilledResult<any> => result.status === "fulfilled" && result.value !== null)
+        .map((result) => result.value);
+
+      // Final update to history status based on all results
       setHistory(prev =>
         prev.map(item =>
-          item.id === newHistory.id
-            ? { ...item, status: "completed" }
+          item.id === newHistory.id 
+            ? { ...item, status: successfulQuestions.length > 0 ? "completed" : "failed" } 
             : item
         )
       );
 
-      toast({
-        title: "문항 생성 완료",
-        description: `${generatedQuestions.length}개의 문항이 성공적으로 생성되었습니다.`,
-      });
+      if (successfulQuestions.length === 0) {
+        toast({
+          title: "문항 생성 실패",
+          description: "모든 문항 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+          variant: "destructive",
+        });
+      } else if (successfulQuestions.length < newHistory.count) {
+        toast({
+          title: "일부 문항 생성 실패",
+          description: `${newHistory.count}개 중 ${successfulQuestions.length}개의 문항만 생성되었습니다.`, 
+          variant: "default",
+        });
+      } else {
+        toast({
+          title: "문항 생성 완료",
+          description: `${successfulQuestions.length}개의 문항이 성공적으로 생성되었습니다.`, 
+        });
+      }
     } catch (error) {
-      console.error("Error in handleGenerate:", error);
-      setHistory(prev =>
-        prev.map(item =>
-          item.id === newHistory.id
-            ? { ...item, status: "failed" }
+      console.error("Error in handleGenerate (outer catch block):", error);
+      setHistory(prev => 
+        prev.map(item => 
+          item.id === newHistory.id 
+            ? { ...item, status: "failed" } 
             : item
         )
       );
