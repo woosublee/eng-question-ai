@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -12,12 +12,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Edit, Download, Archive, CheckCircle, XCircle, GripVertical } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import type { QuestionFormData, GenerationHistory, SavedQuestion } from "@/app/page"
+import { generateQuestion } from "@/lib/openai"
 
 interface QuestionResultsProps {
   formData: QuestionFormData | null
   historyItem: GenerationHistory | undefined
   onBackToForm: () => void
   onSaveToStorage: (title: string, questions: SavedQuestion[], tags: string[]) => void
+  questions: SavedQuestion[]
 }
 
 interface GeneratedQuestion {
@@ -28,6 +30,8 @@ interface GeneratedQuestion {
   options: string[]
   correctAnswer: number
   explanation: string
+  difficulty: "상" | "중" | "하"
+  grade: string
 }
 
 declare module "@/components/ui/badge" {
@@ -36,45 +40,43 @@ declare module "@/components/ui/badge" {
   }
 }
 
-export default function QuestionResults({ formData, historyItem, onBackToForm, onSaveToStorage }: QuestionResultsProps) {
+export default function QuestionResults({
+  formData,
+  historyItem,
+  onBackToForm,
+  onSaveToStorage,
+  questions
+}: QuestionResultsProps) {
   const { toast } = useToast()
-  const [editingId, setEditingId] = useState<string | null>(null)
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [saveTitle, setSaveTitle] = useState("")
   const [saveTags, setSaveTags] = useState("")
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [selectedQuestions, setSelectedQuestions] = useState<Set<string>>(new Set())
-  const [questions, setQuestions] = useState<GeneratedQuestion[]>(() => {
-    if (!formData || !historyItem) return []
-
-    const mockQuestions: GeneratedQuestion[] = []
-    let questionId = 1
-
-    historyItem.questionTypes.forEach((qt) => {
-      for (let i = 0; i < qt.count; i++) {
-        mockQuestions.push({
-          id: `generated-q${questionId++}`,
-          type: qt.type,
-          passage: `During the Roman Empire, architecture became a significant political symbol, elevating the status of architects. Vitruvius, an architect under Augustus Caesar, emphasized that the field required both theory and practice. He listed essential subjects for architects, including literature, math, philosophy, and law. According to him, those with only practical skills lacked authority, while those relying only on theory were "hunting the shadow, not the substance."`,
-          questionStatement: `밑줄 친 hunting the shadow, not the substance가 다음 글에서 의미하는 바로 가장 적절한 것은?`,
-          options: [
-            "seeking abstract knowledge emphasized by architectural tradition",
-            "discounting the subjects necessary to achieve architectural authority",
-            "pursuing the ideals of architecture without the practical skills",
-            "prioritizing architecture's material aspects over its artistic ones",
-            "focusing on theoretical foundations rather than creative applications",
-          ],
-          correctAnswer: 2,
-          explanation:
-            "이 글에서 'hunting the shadow, not the substance'는 실무 경험 없이 이론에만 의존하는 것을 의미합니다. 비트루비우스는 건축가에게 이론과 실무가 모두 필요하다고 강조했으며, 실무 기술 없이 이론만 추구하는 것은 실체가 아닌 그림자를 쫓는 것과 같다고 표현했습니다.",
-        })
-      }
-    })
-
-    return mockQuestions
-  })
-
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [editedQuestion, setEditedQuestion] = useState<GeneratedQuestion | null>(null)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  const [isGenerating, setIsGenerating] = useState(true)
+  const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestion[]>([])
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0
+    }
+  }, [historyItem?.id])
+
+  useEffect(() => {
+    if (historyItem?.status === "generating") {
+      setIsGenerating(true)
+      setGeneratedQuestions([])
+    } else if (historyItem?.status === "completed" && questions && questions.length > 0) {
+      setIsGenerating(false)
+      setGeneratedQuestions(questions)
+    } else if (historyItem?.status === "failed") {
+      setIsGenerating(false)
+      setGeneratedQuestions([])
+    }
+  }, [questions, historyItem])
 
   const handleEdit = (question: GeneratedQuestion) => {
     setEditingId(question.id)
@@ -83,7 +85,7 @@ export default function QuestionResults({ formData, historyItem, onBackToForm, o
 
   const handleSave = () => {
     if (editedQuestion) {
-      setQuestions((prev: GeneratedQuestion[]) => prev.map((q: GeneratedQuestion) => (q.id === editedQuestion.id ? editedQuestion : q)))
+      setGeneratedQuestions((prev: GeneratedQuestion[]) => prev.map((q: GeneratedQuestion) => (q.id === editedQuestion.id ? editedQuestion : q)))
     }
     setEditingId(null)
     setEditedQuestion(null)
@@ -115,7 +117,7 @@ export default function QuestionResults({ formData, historyItem, onBackToForm, o
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      const allIds = new Set(questions.map((q: GeneratedQuestion) => q.id))
+      const allIds = new Set(generatedQuestions.map((q: GeneratedQuestion) => q.id))
       setSelectedQuestions(allIds)
     } else {
       setSelectedQuestions(new Set())
@@ -164,13 +166,13 @@ export default function QuestionResults({ formData, historyItem, onBackToForm, o
   const handleExport = () => {
     const exportData = {
       metadata: {
+        type: formData?.type,
         difficulty: formData?.difficulty,
         grade: formData?.grade,
-        totalQuestions: questions.length,
+        totalQuestions: generatedQuestions.length,
         generatedAt: historyItem?.timestamp,
-        questionTypes: historyItem?.questionTypes,
       },
-      questions: questions,
+      questions: generatedQuestions,
     }
 
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" })
@@ -204,7 +206,7 @@ export default function QuestionResults({ formData, historyItem, onBackToForm, o
     }
 
     try {
-      const selectedQuestionsList = questions.filter((q: GeneratedQuestion) => selectedQuestions.has(q.id))
+      const selectedQuestionsList = generatedQuestions.filter((q) => selectedQuestions.has(q.id)) as SavedQuestion[]
       const tags = saveTags
         .split(",")
         .map((tag: string) => tag.trim())
@@ -256,11 +258,11 @@ export default function QuestionResults({ formData, historyItem, onBackToForm, o
     )
   }
 
-  const isAllSelected = selectedQuestions.size === questions.length && questions.length > 0
-  const isPartiallySelected = selectedQuestions.size > 0 && selectedQuestions.size < questions.length
+  const isAllSelected = selectedQuestions.size === generatedQuestions.length && generatedQuestions.length > 0
+  const isPartiallySelected = selectedQuestions.size > 0 && selectedQuestions.size < generatedQuestions.length
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col h-full">
       <div className="flex-shrink-0 p-6 bg-white border-b border-gray-200">
         <div className="flex items-center justify-between">
           <div>
@@ -268,7 +270,7 @@ export default function QuestionResults({ formData, historyItem, onBackToForm, o
             <div className="flex items-center gap-2 mt-1">
               <Badge variant="secondary">{getGradeLabel(formData.grade)}</Badge>
               <Badge variant="secondary">난이도: {formData.difficulty}</Badge>
-              <Badge variant="outline">총 {questions.length}개</Badge>
+              <Badge variant="outline">총 {generatedQuestions.length}개</Badge>
               <Badge
                 variant={historyItem.status === "completed" ? "default" : "secondary"}
                 className={historyItem.status === "completed" ? "bg-green-100 text-green-800" : ""}
@@ -283,7 +285,7 @@ export default function QuestionResults({ formData, historyItem, onBackToForm, o
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={handleExport}>
+            <Button variant="outline" onClick={handleExport} disabled={isGenerating}>
               <Download className="w-4 h-4 mr-2" />
               내보내기
             </Button>
@@ -291,7 +293,7 @@ export default function QuestionResults({ formData, historyItem, onBackToForm, o
               <DialogTrigger asChild>
                 <Button
                   variant="outline"
-                  disabled={selectedQuestions.size === 0}
+                  disabled={selectedQuestions.size === 0 || isGenerating}
                 >
                   <Archive className="w-4 h-4 mr-2" />
                   보관함에 저장 ({selectedQuestions.size})
@@ -325,7 +327,7 @@ export default function QuestionResults({ formData, historyItem, onBackToForm, o
                     </Button>
                     <Button
                       onClick={handleSaveToStorageClick}
-                      disabled={!saveTitle.trim() || selectedQuestions.size === 0}
+                      disabled={!saveTitle.trim() || selectedQuestions.size === 0 || isGenerating}
                     >
                       저장
                     </Button>
@@ -336,211 +338,216 @@ export default function QuestionResults({ formData, historyItem, onBackToForm, o
           </div>
         </div>
 
-        <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-200">
-          <div className="flex items-center gap-2">
-            <Checkbox
-              checked={isAllSelected}
-              ref={(el) => {
-                if (el) {
-                  (el as HTMLInputElement).indeterminate = isPartiallySelected
-                }
-              }}
-              onCheckedChange={handleSelectAll}
-            />
-            <span className="text-sm font-medium text-gray-700">{isAllSelected ? "전체 해제" : "전체 선택"}</span>
+        {!isGenerating && (
+          <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-200">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                checked={isAllSelected}
+                ref={(el) => {
+                  if (el) {
+                    (el as HTMLInputElement).indeterminate = isPartiallySelected
+                  }
+                }}
+                onCheckedChange={handleSelectAll}
+                disabled={isGenerating}
+              />
+              <span className="text-sm font-medium text-gray-700">{isAllSelected ? "전체 해제" : "전체 선택"}</span>
+            </div>
+            {selectedQuestions.size > 0 && (
+              <span className="text-sm text-blue-600">{selectedQuestions.size}개 문항 선택됨</span>
+            )}
           </div>
-          {selectedQuestions.size > 0 && (
-            <span className="text-sm text-blue-600">{selectedQuestions.size}개 문항 선택됨</span>
-          )}
-        </div>
+        )}
       </div>
 
-      <div className="flex-1 overflow-auto p-6">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6 min-h-0">
         <div className="max-w-4xl mx-auto">
-          <div className="space-y-6">
-            {questions.map((question: GeneratedQuestion, index: number) => (
-              <Card key={question.id} className="p-6">
-                {editingId === question.id && editedQuestion ? (
-                  <div className="space-y-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <h2 className="text-xl font-bold text-gray-900">문항 편집</h2>
-                      <div className="flex gap-2">
-                        <Button variant="outline" onClick={handleCancel}>
-                          취소
-                        </Button>
-                        <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700">
-                          저장하기
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-900 mb-3">발문</label>
-                      <Input
-                        value={editedQuestion.questionStatement}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                          setEditedQuestion({
-                            ...editedQuestion,
-                            questionStatement: e.target.value,
-                          })
-                        }
-                        className="w-full"
-                        placeholder="문제의 발문을 입력하세요"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-900 mb-3">지문</label>
-                      <Textarea
-                        value={editedQuestion.passage}
-                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-                          setEditedQuestion({
-                            ...editedQuestion,
-                            passage: e.target.value,
-                          })
-                        }
-                        rows={6}
-                        className="w-full"
-                        placeholder="지문을 입력하세요"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-900 mb-3">선택지</label>
-                      <div className="space-y-3">
-                        {editedQuestion.options.map((option: string, optIndex: number) => (
-                          <div
-                            key={optIndex}
-                            draggable
-                            onDragStart={(e: React.DragEvent<HTMLDivElement>) => handleDragStart(e, optIndex)}
-                            onDragOver={handleDragOver}
-                            onDrop={(e: React.DragEvent<HTMLDivElement>) => handleDrop(e, optIndex)}
-                            className={`flex items-center gap-3 p-2 rounded-lg border transition-colors ${
-                              draggedIndex === optIndex
-                                ? "bg-blue-50 border-blue-300"
-                                : "bg-white border-gray-200 hover:bg-gray-50"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2 cursor-move">
-                              <GripVertical className="w-4 h-4 text-gray-400" />
-                              <span className="text-sm font-medium text-gray-700 flex-shrink-0 w-6">
-                                {optIndex + 1}.
-                              </span>
-                            </div>
-                            <Input
-                              value={option}
-                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                                const newOptions = [...editedQuestion.options]
-                                newOptions[optIndex] = e.target.value
-                                setEditedQuestion({
-                                  ...editedQuestion,
-                                  options: newOptions,
-                                })
-                              }}
-                              className="flex-1"
-                              placeholder={`선택지 ${optIndex + 1}을 입력하세요`}
-                            />
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              {editedQuestion.correctAnswer === optIndex ? (
-                                <div className="flex items-center gap-1 text-green-600">
-                                  <span className="text-sm font-medium">정답</span>
-                                  <CheckCircle className="w-4 h-4" />
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() => handleCorrectAnswerChange(optIndex)}
-                                  className="flex items-center gap-1 text-gray-400 hover:text-green-600 transition-colors"
-                                >
-                                  <span className="text-sm">오답</span>
-                                  <XCircle className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                        좌측 = 아이콘을 드래그하여 선택지 순서를 변경할 수 있습니다.
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <Checkbox
-                          checked={selectedQuestions.has(question.id)}
-                          onCheckedChange={(checked: boolean) => handleQuestionSelect(question.id, checked)}
-                        />
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-500">문제 {index + 1}</span>
-                          <Badge variant="outline" className="text-xs">
-                            {question.type}
-                          </Badge>
+          {isGenerating ? (
+            <Card className="p-8 text-center">
+              <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+              <p className="text-gray-600">문항을 생성하고 있습니다... ({generatedQuestions.length}/{formData.count})</p>
+            </Card>
+          ) : (
+            <div className="space-y-6">
+              {generatedQuestions.map((question: GeneratedQuestion, index: number) => (
+                <Card key={question.id} className="p-6">
+                  {editingId === question.id && editedQuestion ? (
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-xl font-bold text-gray-900">문항 편집</h2>
+                        <div className="flex gap-2">
+                          <Button variant="outline" onClick={handleCancel}>
+                            취소
+                          </Button>
+                          <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700">
+                            저장하기
+                          </Button>
                         </div>
                       </div>
 
-                      <Button variant="outline" size="sm" onClick={() => handleEdit(question)}>
-                        <Edit className="w-4 h-4 mr-1" />
-                        수정
-                      </Button>
-                    </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-900 mb-3">발문</label>
+                        <Input
+                          value={editedQuestion.questionStatement}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                            setEditedQuestion({
+                              ...editedQuestion,
+                              questionStatement: e.target.value,
+                            })
+                          }
+                          className="w-full"
+                          placeholder="문제의 발문을 입력하세요"
+                        />
+                      </div>
 
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-700 mb-3">발문</h3>
-                      <p className="font-medium text-gray-900 bg-blue-50 p-3 rounded-lg">
-                        {question.questionStatement}
-                      </p>
-                    </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-900 mb-3">지문</label>
+                        <Textarea
+                          value={editedQuestion.passage}
+                          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                            setEditedQuestion({
+                              ...editedQuestion,
+                              passage: e.target.value,
+                            })
+                          }
+                          rows={6}
+                          className="w-full"
+                          placeholder="지문을 입력하세요"
+                        />
+                      </div>
 
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-700 mb-3">지문</h3>
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <p className="text-sm leading-relaxed">{question.passage}</p>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-900 mb-3">선택지</label>
+                        <div className="space-y-3">
+                          {editedQuestion.options.map((option: string, optIndex: number) => (
+                            <div
+                              key={optIndex}
+                              draggable
+                              onDragStart={(e: React.DragEvent<HTMLDivElement>) => handleDragStart(e, optIndex)}
+                              onDragOver={handleDragOver}
+                              onDrop={(e: React.DragEvent<HTMLDivElement>) => handleDrop(e, optIndex)}
+                              className={`flex items-center gap-3 p-2 rounded-lg border transition-colors ${
+                                draggedIndex === optIndex
+                                  ? "bg-blue-50 border-blue-300"
+                                  : "bg-white border-gray-200 hover:bg-gray-50"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 cursor-move">
+                                <GripVertical className="w-4 h-4 text-gray-400" />
+                                <span className="text-sm font-medium text-gray-700 flex-shrink-0 w-6">
+                                  {optIndex + 1}.
+                                </span>
+                              </div>
+                              <Input
+                                value={option}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                  const newOptions = [...editedQuestion.options]
+                                  newOptions[optIndex] = e.target.value
+                                  setEditedQuestion({
+                                    ...editedQuestion,
+                                    options: newOptions,
+                                  })
+                                }}
+                                className="flex-1"
+                                placeholder={`선택지 ${optIndex + 1}을 입력하세요`}
+                              />
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                {editedQuestion.correctAnswer === optIndex ? (
+                                  <div className="flex items-center gap-1 text-green-600">
+                                    <span className="text-sm font-medium">정답</span>
+                                    <CheckCircle className="w-4 h-4" />
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => handleCorrectAnswerChange(optIndex)}
+                                    className="flex items-center gap-1 text-gray-400 hover:text-green-600 transition-colors"
+                                  >
+                                    <span className="text-sm">오답</span>
+                                    <XCircle className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-2">
+                          좌측 = 아이콘을 드래그하여 선택지 순서를 변경할 수 있습니다.
+                        </p>
                       </div>
                     </div>
-
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-700 mb-3">선택지</h3>
-                      <div className="space-y-2">
-                        {question.options.map((option: string, optIndex: number) => (
-                          <div
-                            key={optIndex}
-                            className={`flex items-start gap-2 p-3 rounded-lg border ${
-                              optIndex === question.correctAnswer
-                                ? "bg-green-50 border-green-200"
-                                : "bg-gray-50 border-gray-200"
-                            }`}
-                          >
-                            <span className="text-sm font-medium text-gray-600 mt-0.5 flex-shrink-0">
-                              {optIndex + 1}.
-                            </span>
-                            <span className="text-sm flex-1">{option}</span>
-                            {optIndex === question.correctAnswer && (
-                              <Badge variant="default" className="bg-green-600 flex-shrink-0">
-                                정답
-                              </Badge>
-                            )}
+                  ) : (
+                    <div className="space-y-6">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <Checkbox
+                            checked={selectedQuestions.has(question.id)}
+                            onCheckedChange={(checked: boolean) => handleQuestionSelect(question.id, checked)}
+                          />
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-500">문제 {index + 1}</span>
+                            <Badge variant="outline" className="text-xs">
+                              {question.type}
+                            </Badge>
+                            <Badge variant="outline">{getGradeLabel(question.grade)}</Badge>
+                            <Badge variant="outline">{question.difficulty}</Badge>
                           </div>
-                        ))}
+                        </div>
+
+                        <Button variant="outline" size="sm" onClick={() => handleEdit(question)}>
+                          <Edit className="w-4 h-4 mr-1" />
+                          수정
+                        </Button>
+                      </div>
+
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-700 mb-3">발문</h3>
+                        <p className="font-medium text-gray-900 bg-blue-50 p-3 rounded-lg">
+                          {question.questionStatement}
+                        </p>
+                      </div>
+
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-700 mb-3">지문</h3>
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          <p className="text-sm leading-relaxed">{question.passage}</p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-700 mb-3">선택지</h3>
+                        <div className="space-y-2">
+                          {question.options.map((option: string, optIndex: number) => (
+                            <div
+                              key={optIndex}
+                              className={`flex items-start gap-2 p-3 rounded-lg border ${
+                                optIndex === question.correctAnswer
+                                  ? "bg-green-50 border-green-200"
+                                  : "bg-gray-50 border-gray-200"
+                              }`}
+                            >
+                              <span className="text-sm font-medium text-gray-600 mt-0.5 flex-shrink-0">
+                                {optIndex + 1}.
+                              </span>
+                              <span className="text-sm flex-1">{option}</span>
+                              {optIndex === question.correctAnswer && (
+                                <Badge variant="default" className="bg-green-600 flex-shrink-0">
+                                  정답
+                                </Badge>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-blue-50 p-4 rounded-lg">
+                        <h3 className="text-sm font-medium text-blue-800 mb-2">해설</h3>
+                        <p className="text-sm text-blue-800">{question.explanation}</p>
                       </div>
                     </div>
-
-                    <div className="bg-blue-50 p-4 rounded-lg">
-                      <h3 className="text-sm font-medium text-blue-800 mb-2">해설</h3>
-                      <p className="text-sm text-blue-800">{question.explanation}</p>
-                    </div>
-                  </div>
-                )}
-              </Card>
-            ))}
-          </div>
-
-          {historyItem.status === "generating" && (
-            <Card className="p-8 text-center">
-              <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-              <p className="text-gray-600">문항을 생성하고 있습니다...</p>
-            </Card>
+                  )}
+                </Card>
+              ))}
+            </div>
           )}
         </div>
       </div>

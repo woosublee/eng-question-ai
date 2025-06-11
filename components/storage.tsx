@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Search, Trash2, Eye, Download, Calendar, BookOpen, Tag, Edit } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import type { SavedQuestionSet } from "@/app/page"
+import { Textarea } from "@/components/ui/textarea"
 
 interface StorageProps {
   questionSets: SavedQuestionSet[]
@@ -50,8 +51,8 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
     const matchesSearch =
       set.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       set.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase()))
-    const matchesGrade = filterGrade === "all" || set.grade === filterGrade
-    const matchesDifficulty = filterDifficulty === "all" || set.difficulty === filterDifficulty
+    const matchesGrade = filterGrade === "all" || set.questions[0]?.grade === filterGrade
+    const matchesDifficulty = filterDifficulty === "all" || set.questions[0]?.difficulty === filterDifficulty
 
     return matchesSearch && matchesGrade && matchesDifficulty
   })
@@ -96,8 +97,8 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
     const exportData = {
       metadata: {
         title: set.title,
-        difficulty: set.difficulty,
-        grade: set.grade,
+        difficulty: set.questions[0]?.difficulty,
+        grade: set.questions[0]?.grade,
         savedAt: set.savedAt,
         totalQuestions: set.questions.length,
         tags: set.tags,
@@ -117,7 +118,7 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-y-auto">
       {/* 상단 헤더 영역 - 고정 */}
       <div className="flex-shrink-0 p-6 bg-white border-b border-gray-200">
         <div className="flex items-center justify-between mb-6">
@@ -194,10 +195,13 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
                       <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2">{set.title}</h3>
                       <div className="flex items-center gap-2 mb-3">
                         <Badge variant="secondary" className="text-xs">
-                          {getGradeLabel(set.grade)}
+                          {set.questions[0]?.type}
                         </Badge>
                         <Badge variant="outline" className="text-xs">
-                          난이도: {set.difficulty}
+                          {getGradeLabel(set.questions[0]?.grade)}
+                        </Badge>
+                        <Badge variant="outline" className="text-xs">
+                          난이도: {set.questions[0]?.difficulty}
                         </Badge>
                       </div>
                     </div>
@@ -248,224 +252,128 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
+
+                  <Dialog open={isDetailOpen && selectedSet?.id === set.id} onOpenChange={setIsDetailOpen}>
+                    <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0">
+                      <DialogHeader className="p-6 pb-4 border-b border-gray-200">
+                        <DialogTitle className="flex items-center justify-between text-2xl font-bold text-gray-900">
+                          {isEditMode ? (
+                            <Input
+                              value={editedSet?.title || ""}
+                              onChange={(e) => setEditedSet(prev => prev ? { ...prev, title: e.target.value } : null)}
+                              className="text-xl font-bold px-3 py-2 border border-gray-300 rounded-md focus:border-blue-500 focus:ring-blue-500 focus:ring-1"
+                              placeholder="제목을 입력하세요"
+                            />
+                          ) : (
+                            selectedSet?.title
+                          )}
+                          <div className="flex gap-2">
+                            {isEditMode ? (
+                              <>
+                                <Button onClick={handleSave}>저장</Button>
+                                <Button variant="outline" onClick={handleCancel}>취소</Button>
+                              </>
+                            ) : (
+                              <Button variant="outline" onClick={handleEdit}>
+                                <Edit className="w-4 h-4 mr-2" />수정
+                              </Button>
+                            )}
+                          </div>
+                        </DialogTitle>
+                      </DialogHeader>
+                      <div className="flex-1 overflow-auto p-6">
+                        {selectedSet && (
+                          <div className="space-y-6">
+                            <div className="flex items-center gap-2 text-sm text-gray-600 mb-4">
+                              <Badge variant="secondary">{selectedSet.questions[0]?.type}</Badge>
+                              <Badge variant="secondary">{getGradeLabel(selectedSet.questions[0]?.grade)}</Badge>
+                              <Badge variant="outline">난이도: {selectedSet.questions[0]?.difficulty}</Badge>
+                              <Calendar className="w-4 h-4" />
+                              <span>{new Date(selectedSet.savedAt).toLocaleDateString()}</span>
+                              {selectedSet.tags.length > 0 && (
+                                <div className="flex items-center gap-2 ml-4">
+                                  <Tag className="w-4 h-4 text-gray-400" />
+                                  <div className="flex flex-wrap gap-1">
+                                    {selectedSet.tags.map((tag, index) => (
+                                      <Badge key={index} variant="outline" className="text-xs">
+                                        {tag}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {selectedSet.questions.map((question, qIndex) => (
+                              <Card key={question.id} className="p-6">
+                                <div className="flex items-start justify-between mb-4">
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-sm font-medium text-gray-500">문제 {qIndex + 1}</span>
+                                    <Badge variant="outline" className="text-xs">
+                                      {question.type}
+                                    </Badge>
+                                    <Badge variant="outline">{getGradeLabel(question.grade)}</Badge>
+                                    <Badge variant="outline">{question.difficulty}</Badge>
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <h3 className="text-sm font-medium text-gray-700 mb-3">발문</h3>
+                                  <p className="font-medium text-gray-900 bg-blue-50 p-3 rounded-lg">
+                                    {question.questionStatement}
+                                  </p>
+                                </div>
+
+                                <div>
+                                  <h3 className="text-sm font-medium text-gray-700 mb-3">지문</h3>
+                                  <div className="bg-gray-50 p-4 rounded-lg">
+                                    <p className="text-sm leading-relaxed">{question.passage}</p>
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <h3 className="text-sm font-medium text-gray-700 mb-3">선택지</h3>
+                                  <div className="space-y-2">
+                                    {question.options.map((option, optIndex) => (
+                                      <div
+                                        key={optIndex}
+                                        className={`flex items-start gap-2 p-3 rounded-lg border ${
+                                          optIndex === question.correctAnswer
+                                            ? "bg-green-50 border-green-200"
+                                            : "bg-gray-50 border-gray-200"
+                                        }`}
+                                      >
+                                        <span className="text-sm font-medium text-gray-600 mt-0.5 flex-shrink-0">
+                                          {optIndex + 1}.
+                                        </span>
+                                        <span className="text-sm flex-1">{option}</span>
+                                        {optIndex === question.correctAnswer && (
+                                          <Badge variant="default" className="bg-green-600 flex-shrink-0">
+                                            정답
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div className="bg-blue-50 p-4 rounded-lg">
+                                  <h3 className="text-sm font-medium text-blue-800 mb-2">해설</h3>
+                                  <p className="text-sm text-blue-800">{question.explanation}</p>
+                                </div>
+                              </Card>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </DialogContent>
+                  </Dialog>
                 </Card>
               ))}
             </div>
           )}
         </div>
       </div>
-
-      {/* 상세보기 다이얼로그 */}
-      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <div className="flex items-center justify-between">
-              <DialogTitle>
-                {isEditMode ? (
-                  <Input
-                    value={editedSet?.title || ""}
-                    onChange={(e) => setEditedSet((prev) => prev ? { ...prev, title: e.target.value } : null)}
-                    className="text-xl font-bold"
-                  />
-                ) : (
-                  selectedSet?.title
-                )}
-              </DialogTitle>
-              <div className="flex gap-2">
-                {isEditMode ? (
-                  <>
-                    <Button variant="outline" onClick={handleCancel}>
-                      취소
-                    </Button>
-                    <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700">
-                      저장
-                    </Button>
-                  </>
-                ) : (
-                  <Button variant="outline" onClick={handleEdit}>
-                    <Edit className="w-4 h-4 mr-1" />
-                    수정
-                  </Button>
-                )}
-              </div>
-            </div>
-          </DialogHeader>
-          {selectedSet && (
-            <div className="space-y-6">
-              <div className="flex items-center gap-4">
-                {isEditMode ? (
-                  <>
-                    <Select
-                      value={editedSet?.grade || ""}
-                      onValueChange={(value) => setEditedSet((prev) => prev ? { ...prev, grade: value } : null)}
-                    >
-                      <SelectTrigger className="w-40">
-                        <SelectValue placeholder="학년 선택" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="elementary-3">초등학교 3학년</SelectItem>
-                        <SelectItem value="elementary-4">초등학교 4학년</SelectItem>
-                        <SelectItem value="elementary-5">초등학교 5학년</SelectItem>
-                        <SelectItem value="elementary-6">초등학교 6학년</SelectItem>
-                        <SelectItem value="middle-1">중학교 1학년</SelectItem>
-                        <SelectItem value="middle-2">중학교 2학년</SelectItem>
-                        <SelectItem value="middle-3">중학교 3학년</SelectItem>
-                        <SelectItem value="high-1">고등학교 1학년</SelectItem>
-                        <SelectItem value="high-2">고등학교 2학년</SelectItem>
-                        <SelectItem value="high-3">고등학교 3학년</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Select
-                      value={editedSet?.difficulty || ""}
-                      onValueChange={(value) => setEditedSet((prev) => prev ? { ...prev, difficulty: value } : null)}
-                    >
-                      <SelectTrigger className="w-32">
-                        <SelectValue placeholder="난이도" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="하">하</SelectItem>
-                        <SelectItem value="중">중</SelectItem>
-                        <SelectItem value="상">상</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </>
-                ) : (
-                  <>
-                    <Badge variant="secondary">{getGradeLabel(selectedSet.grade)}</Badge>
-                    <Badge variant="outline">난이도: {selectedSet.difficulty}</Badge>
-                  </>
-                )}
-                <Badge variant="outline">{selectedSet.questions.length}개 문항</Badge>
-              </div>
-
-              {isEditMode ? (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">태그</label>
-                  <div className="flex flex-wrap gap-2 p-2 border rounded-md">
-                    {editedSet?.tags.map((tag, index) => (
-                      <Badge key={index} variant="secondary" className="flex items-center gap-1">
-                        {tag}
-                        <button
-                          onClick={() => {
-                            setEditedSet((prev) =>
-                              prev
-                                ? {
-                                    ...prev,
-                                    tags: prev.tags.filter((_, i) => i !== index),
-                                  }
-                                : null
-                            )
-                          }}
-                          className="ml-1 hover:text-red-500"
-                        >
-                          ×
-                        </button>
-                      </Badge>
-                    ))}
-                    <input
-                      type="text"
-                      className="flex-1 min-w-[120px] outline-none bg-transparent"
-                      placeholder="태그 입력 후 Enter"
-                      onCompositionStart={(e) => {
-                        e.currentTarget.dataset.composing = "true"
-                      }}
-                      onCompositionEnd={(e) => {
-                        e.currentTarget.dataset.composing = "false"
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && e.currentTarget.dataset.composing !== "true") {
-                          e.preventDefault()
-                          const input = e.target as HTMLInputElement
-                          const value = input.value.trim()
-                          if (value) {
-                            const newTags = [...(editedSet?.tags || []), value]
-                            setEditedSet((prev) =>
-                              prev
-                                ? {
-                                    ...prev,
-                                    tags: newTags,
-                                  }
-                                : null
-                            )
-                            input.value = ""
-                          }
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
-              ) : (
-                selectedSet.tags.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <Tag className="w-4 h-4 text-gray-400" />
-                    <div className="flex flex-wrap gap-1">
-                      {selectedSet.tags.map((tag, index) => (
-                        <Badge key={index} variant="outline" className="text-xs">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )
-              )}
-
-              <div className="space-y-4">
-                {(isEditMode ? editedSet : selectedSet)?.questions.map((question, index) => (
-                  <Card key={question.id} className="p-4">
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="text-sm font-medium text-gray-500">문제 {index + 1}</span>
-                        <Badge variant="outline" className="text-xs">
-                          {question.type}
-                        </Badge>
-                      </div>
-
-                      <div>
-                        <h4 className="text-sm font-medium text-gray-700 mb-2">발문</h4>
-                        <p className="text-sm bg-blue-50 p-2 rounded">{question.questionStatement}</p>
-                      </div>
-
-                      <div>
-                        <h4 className="text-sm font-medium text-gray-700 mb-2">지문</h4>
-                        <p className="text-sm bg-gray-50 p-2 rounded leading-relaxed">{question.passage}</p>
-                      </div>
-
-                      <div>
-                        <h4 className="text-sm font-medium text-gray-700 mb-2">선택지</h4>
-                        <div className="space-y-1">
-                          {question.options.map((option, optIndex) => (
-                            <div
-                              key={optIndex}
-                              className={`text-sm p-2 rounded flex items-start gap-2 ${
-                                optIndex === question.correctAnswer
-                                  ? "bg-green-50 border border-green-200"
-                                  : "bg-gray-50"
-                              }`}
-                            >
-                              <span className="font-medium text-gray-600">{optIndex + 1}.</span>
-                              <span className="flex-1">{option}</span>
-                              {optIndex === question.correctAnswer && (
-                                <Badge variant="default" className="bg-green-600 text-xs">
-                                  정답
-                                </Badge>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div>
-                        <h4 className="text-sm font-medium text-blue-800 mb-2">해설</h4>
-                        <p className="text-sm text-blue-800 bg-blue-50 p-2 rounded">{question.explanation}</p>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

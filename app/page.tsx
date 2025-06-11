@@ -5,6 +5,9 @@ import { Sidebar } from "@/components/sidebar"
 import { QuestionGeneratorForm } from "@/components/question-generator-form"
 import QuestionResults from "@/components/question-results"
 import { Storage } from "@/components/storage"
+import { generateQuestion } from '@/lib/openai'
+import { QuestionSet } from '@/types/question'
+import { toast } from "@/components/ui/use-toast"
 
 const QUESTION_TYPES = [
   "목적 찾기",
@@ -26,32 +29,49 @@ const QUESTION_TYPES = [
   "복합 문단의 이해",
 ]
 
-export interface GenerationHistory {
-  id: string
-  timestamp: Date
-  difficulty: string
+interface QuestionGenerationParams {
+  type: string
+  difficulty: "상" | "중" | "하"
   grade: string
-  questionTypes: Array<{
+  count: number
+}
+
+interface GenerationResult {
+  questions: Array<{
+    id: string
     type: string
-    count: number
+    difficulty: "상" | "중" | "하"
+    grade: string
+    passage: string
+    questionStatement: string
+    options: string[]
+    correctAnswer: number
+    explanation: string
   }>
-  totalCount: number
-  status: "completed" | "generating" | "failed"
 }
 
 export interface QuestionFormData {
+  type: string
   difficulty: "상" | "중" | "하"
   grade: string
-  questionTypes: Array<{
-    type: string
-    count: number
-    selected: boolean
-  }>
+  count: number
+}
+
+export interface GenerationHistory {
+  id: string
+  timestamp: Date
+  type: string
+  difficulty: "상" | "중" | "하"
+  grade: string
+  count: number
+  status: "generating" | "completed" | "failed"
 }
 
 export interface SavedQuestion {
   id: string
   type: string
+  difficulty: "상" | "중" | "하"
+  grade: string
   passage: string
   questionStatement: string
   options: string[]
@@ -62,139 +82,212 @@ export interface SavedQuestion {
 export interface SavedQuestionSet {
   id: string
   title: string
-  savedAt: Date
-  difficulty: string
-  grade: string
   questions: SavedQuestion[]
+  savedAt: Date
   tags: string[]
 }
 
-// 더미 데이터 생성
-const createDummyQuestionSets = (): SavedQuestionSet[] => {
+// 더미 데이터 생성 함수 (주석 처리)
+/*
+function createDummyQuestionSets(): SavedQuestionSet[] {
   return [
     {
-      id: "dummy-1",
-      title: "수능 기출 빈칸추론 문제집",
-      savedAt: new Date(2024, 11, 1),
-      difficulty: "상",
-      grade: "high-3",
-      tags: ["수능", "기출", "빈칸추론"],
-      questions: [
-        {
-          id: "q1",
-          type: "빈칸 완성하기",
-          passage:
-            "The concept of emotional intelligence has gained significant attention in recent years. Unlike traditional intelligence, which focuses on cognitive abilities, emotional intelligence involves the ability to recognize, understand, and manage emotions effectively. Research has shown that individuals with high emotional intelligence tend to have better relationships, perform better at work, and experience greater overall well-being.",
-          questionStatement: "다음 글의 빈칸에 들어갈 말로 가장 적절한 것은?",
-          options: [
-            "cognitive abilities are more important than emotional skills",
-            "emotional intelligence is just as valuable as traditional intelligence",
-            "managing emotions is impossible without proper training",
-            "relationships have no connection to intelligence levels",
-            "well-being depends solely on academic achievements",
-          ],
-          correctAnswer: 1,
-          explanation:
-            "이 글은 감정지능이 전통적인 지능과 다르지만 그에 못지않게 중요하다는 내용을 다루고 있습니다. 감정지능이 높은 사람들이 더 나은 관계를 맺고, 직장에서 더 좋은 성과를 내며, 전반적인 웰빙을 경험한다는 연구 결과를 제시하고 있습니다.",
-        },
-        {
-          id: "q2",
-          type: "빈칸 완성하기",
-          passage:
-            "Climate change is one of the most pressing issues of our time. The increasing concentration of greenhouse gases in the atmosphere is causing global temperatures to rise, leading to melting ice caps, rising sea levels, and extreme weather events. Scientists agree that immediate action is needed to reduce carbon emissions and transition to renewable energy sources.",
-          questionStatement: "다음 글의 빈칸에 들어갈 말로 가장 적절한 것은?",
-          options: [
-            "climate change is a natural phenomenon that cannot be controlled",
-            "greenhouse gases have no impact on global temperatures",
-            "immediate action is required to address environmental challenges",
-            "renewable energy is too expensive to implement globally",
-            "extreme weather events are unrelated to human activities",
-          ],
-          correctAnswer: 2,
-          explanation:
-            "이 글은 기후변화의 심각성과 온실가스 증가로 인한 다양한 환경 문제들을 설명하며, 탄소 배출 감소와 재생에너지로의 전환을 위한 즉각적인 행동이 필요하다고 강조하고 있습니다.",
-        },
-      ],
-    },
-    {
-      id: "dummy-2",
-      title: "중학교 영어 독해 연습",
-      savedAt: new Date(2024, 10, 15),
+      id: "1",
+      title: "환경 문제",
+      savedAt: new Date(),
       difficulty: "중",
-      grade: "middle-2",
-      tags: ["중학교", "독해", "연습"],
+      grade: "high-2",
       questions: [
         {
-          id: "q3",
+          id: "1-1",
           type: "주제 찾기",
-          passage:
-            "Reading books is one of the most beneficial activities for students. It helps improve vocabulary, enhances critical thinking skills, and provides knowledge about different cultures and perspectives. Regular reading also improves concentration and reduces stress levels.",
-          questionStatement: "다음 글의 주제로 가장 적절한 것은?",
+          passage: "Global warming is one of the most pressing issues of our time...",
+          questionStatement: "What is the main topic of this passage?",
           options: [
-            "the importance of vocabulary building",
-            "benefits of reading for students",
-            "different types of books to read",
-            "how to improve concentration skills",
-            "ways to reduce stress in daily life",
+            "The history of climate change",
+            "The impact of global warming",
+            "Solutions to environmental problems",
+            "The role of governments in environmental protection"
           ],
           correctAnswer: 1,
-          explanation:
-            "이 글은 독서가 학생들에게 주는 다양한 이점들(어휘력 향상, 비판적 사고력 증진, 문화적 지식 습득, 집중력 향상, 스트레스 감소)에 대해 설명하고 있습니다.",
-        },
+          explanation: "The passage focuses on the effects and consequences of global warming."
+        }
       ],
-    },
+      tags: ["환경", "기후변화"]
+    }
   ]
 }
+*/
 
 export default function HomePage() {
   const [currentView, setCurrentView] = useState<"form" | "results" | "storage">("form")
   const [history, setHistory] = useState<GenerationHistory[]>([])
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null)
   const [currentFormData, setCurrentFormData] = useState<QuestionFormData | null>(null)
-  // 더미 데이터로 초기화
-  const [savedQuestionSets, setSavedQuestionSets] = useState<SavedQuestionSet[]>(createDummyQuestionSets())
+  const [savedQuestionSets, setSavedQuestionSets] = useState<SavedQuestionSet[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [generationResults, setGenerationResults] = useState<Record<string, GenerationResult>>({})
 
-  const handleGenerate = (formData: QuestionFormData) => {
+  // 컴포넌트 마운트 시 로컬 스토리지에서 데이터 로드
+  useEffect(() => {
+    // 저장된 문제 세트 로드
+    const savedData = localStorage.getItem("savedQuestionSets")
+    if (savedData) {
+      const parsedData = JSON.parse(savedData)
+      const formattedData = parsedData.map((set: any) => ({
+        ...set,
+        savedAt: new Date(set.savedAt)
+      }))
+      setSavedQuestionSets(formattedData)
+    }
+
+    // 생성 히스토리 로드
+    const historyData = localStorage.getItem("generationHistory")
+    if (historyData) {
+      const parsedHistory = JSON.parse(historyData)
+      const formattedHistory = parsedHistory.map((item: any) => ({
+        ...item,
+        timestamp: new Date(item.timestamp)
+      }))
+      setHistory(formattedHistory)
+    }
+
+    // 생성 결과 로드
+    const resultsData = localStorage.getItem("generationResults")
+    if (resultsData) {
+      setGenerationResults(JSON.parse(resultsData))
+    }
+  }, [])
+
+  // 히스토리 상태가 변경될 때마다 로컬 스토리지에 저장
+  useEffect(() => {
+    localStorage.setItem("generationHistory", JSON.stringify(history))
+  }, [history])
+
+  // 생성 결과가 변경될 때마다 로컬 스토리지에 저장
+  useEffect(() => {
+    console.log("Saving generationResults to local storage:", generationResults)
+    localStorage.setItem("generationResults", JSON.stringify(generationResults))
+  }, [generationResults])
+
+  const handleHistorySelect = (historyId: string) => {
+    const selectedHistory = history.find(item => item.id === historyId)
+    if (!selectedHistory) return
+
+    setSelectedHistoryId(historyId)
+    setCurrentFormData({
+      type: selectedHistory.type,
+      difficulty: selectedHistory.difficulty,
+      grade: selectedHistory.grade,
+      count: selectedHistory.count
+    })
+    setCurrentView("results")
+
+    // 생성 중인 히스토리를 선택한 경우
+    if (selectedHistory.status === "generating") {
+      return
+    }
+
+    // 이미 생성된 결과가 있는 경우
+    const existingResult = generationResults[historyId]
+    if (existingResult) {
+      return
+    }
+
+    // 새로운 생성 요청
+    handleGenerate({
+      type: selectedHistory.type,
+      difficulty: selectedHistory.difficulty,
+      grade: selectedHistory.grade,
+      count: selectedHistory.count
+    })
+  }
+
+  const handleGenerate = async (formData: QuestionFormData) => {
     const newHistory: GenerationHistory = {
       id: Date.now().toString(),
       timestamp: new Date(),
+      type: formData.type,
       difficulty: formData.difficulty,
       grade: formData.grade,
-      questionTypes: formData.questionTypes.filter((qt) => qt.selected),
-      totalCount: formData.questionTypes.filter((qt) => qt.selected).reduce((sum, qt) => sum + qt.count, 0),
+      count: formData.count,
       status: "generating",
     }
 
     setHistory((prev) => [newHistory, ...prev])
     setSelectedHistoryId(newHistory.id)
-    setCurrentFormData(formData)
     setCurrentView("results")
 
-    // Simulate generation completion
-    setTimeout(() => {
-      setHistory((prev) => prev.map((h) => (h.id === newHistory.id ? { ...h, status: "completed" as const } : h)))
-    }, 2000)
-  }
-
-  const handleHistorySelect = (historyId: string) => {
-    setSelectedHistoryId(historyId)
-    const selectedHistory = history.find((h) => h.id === historyId)
-    if (selectedHistory) {
-      // Create form data from history for display
-      const formDataFromHistory: QuestionFormData = {
-        difficulty: selectedHistory.difficulty as "상" | "중" | "하",
-        grade: selectedHistory.grade,
-        questionTypes: QUESTION_TYPES.map((type) => {
-          const historyType = selectedHistory.questionTypes.find((qt) => qt.type === type)
+    try {
+      // 각 문항을 개별적으로 생성하는 Promise 배열 생성
+      const questionPromises = Array(formData.count).fill(null).map(async (_, index) => {
+        try {
+          const question = await generateQuestion({
+            type: formData.type,
+            difficulty: formData.difficulty,
+            grade: formData.grade,
+            count: 1
+          })
           return {
-            type,
-            count: historyType?.count || 1,
-            selected: !!historyType,
+            ...question[0],
+            id: `generated-q${Date.now()}-${index}`,
+            type: formData.type,
+            difficulty: formData.difficulty,
+            grade: formData.grade
           }
-        }),
+        } catch (error) {
+          console.error(`Error generating question ${index + 1}:`, error)
+          return null
+        }
+      })
+
+      // Promise.allSettled를 사용하여 모든 요청이 완료될 때까지 대기
+      const results = await Promise.allSettled(questionPromises)
+      
+      // 성공적으로 생성된 문항만 필터링
+      const successfulQuestions = results
+        .filter((result): result is PromiseFulfilledResult<any> => 
+          result.status === 'fulfilled' && result.value !== null
+        )
+        .map(result => result.value)
+
+      // 생성된 결과 저장
+      setGenerationResults((prev) => ({
+        ...prev,
+        [newHistory.id]: {
+          questions: successfulQuestions,
+        },
+      }))
+
+      // 히스토리 상태 업데이트
+      setHistory((prev) =>
+        prev.map((item) =>
+          item.id === newHistory.id ? { 
+            ...item, 
+            status: successfulQuestions.length > 0 ? "completed" : "failed" 
+          } : item
+        )
+      )
+
+      if (successfulQuestions.length === 0) {
+        toast({
+          title: "생성 실패",
+          description: "문제 생성 중 오류가 발생했습니다.",
+          variant: "destructive",
+        })
       }
-      setCurrentFormData(formDataFromHistory)
-      setCurrentView("results")
+    } catch (error) {
+      console.error("Error generating questions:", error)
+      setHistory((prev) =>
+        prev.map((item) =>
+          item.id === newHistory.id ? { ...item, status: "failed" } : item
+        )
+      )
+      toast({
+        title: "오류 발생",
+        description: "문제 생성 중 오류가 발생했습니다.",
+        variant: "destructive",
+      })
     }
   }
 
@@ -208,49 +301,21 @@ export default function HomePage() {
   }
 
   const handleSaveToStorage = (title: string, questions: SavedQuestion[], tags: string[] = []) => {
-    // 현재 선택된 히스토리 아이템에서 난이도와 학년 정보를 가져옵니다
-    const selectedHistory = history.find((h) => h.id === selectedHistoryId)
-    
-    const newQuestionSet: SavedQuestionSet = {
+    const newSet: SavedQuestionSet = {
       id: Date.now().toString(),
       title,
-      savedAt: new Date(),
-      difficulty: selectedHistory?.difficulty || currentFormData?.difficulty || "중",
-      grade: selectedHistory?.grade || currentFormData?.grade || "high-3",
       questions,
-      tags,
+      savedAt: new Date(),
+      tags
     }
 
-    // 로컬 스토리지에서 기존 데이터 가져오기
-    const existingData = localStorage.getItem("savedQuestionSets")
-    const existingSets: SavedQuestionSet[] = existingData ? JSON.parse(existingData) : []
-    
-    // 새로운 세트 추가
-    const updatedSets = [newQuestionSet, ...existingSets]
-    
-    // 로컬 스토리지에 저장
-    localStorage.setItem("savedQuestionSets", JSON.stringify(updatedSets))
-    
-    // 상태 업데이트
-    setSavedQuestionSets(updatedSets)
-    
-    // 보관함으로 이동
-    setCurrentView("storage")
+    setSavedQuestionSets((prev) => [newSet, ...prev])
+    localStorage.setItem("savedQuestionSets", JSON.stringify([newSet, ...savedQuestionSets]))
+    toast({
+      title: "저장 완료",
+      description: "문제가 보관함에 저장되었습니다.",
+    })
   }
-
-  // 컴포넌트 마운트 시 로컬 스토리지에서 데이터 로드
-  useEffect(() => {
-    const savedData = localStorage.getItem("savedQuestionSets")
-    if (savedData) {
-      const parsedData = JSON.parse(savedData)
-      // Date 객체로 변환
-      const formattedData = parsedData.map((set: any) => ({
-        ...set,
-        savedAt: new Date(set.savedAt)
-      }))
-      setSavedQuestionSets(formattedData)
-    }
-  }, [])
 
   const handleDeleteFromStorage = (setId: string) => {
     console.log("🗑️ 삭제 요청:", setId)
@@ -285,32 +350,53 @@ export default function HomePage() {
     setSavedQuestionSets(updatedSets)
   }
 
+  const handleDeleteHistory = (historyId: string) => {
+    // 히스토리에서 삭제
+    setHistory(prev => prev.filter(h => h.id !== historyId))
+    
+    // 생성 결과에서 삭제
+    setGenerationResults(prev => {
+      const newResults = { ...prev }
+      delete newResults[historyId]
+      return newResults
+    })
+
+    // 현재 선택된 히스토리가 삭제된 경우 폼으로 돌아가기
+    if (selectedHistoryId === historyId) {
+      setSelectedHistoryId(null)
+      setCurrentView("form")
+    }
+  }
+
   // 현재 저장된 세트 수 로깅
   console.log("📊 현재 savedQuestionSets 상태:", savedQuestionSets)
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen">
       <Sidebar
         history={history}
         selectedHistoryId={selectedHistoryId}
         onHistorySelect={handleHistorySelect}
-        onNewGeneration={handleBackToForm}
-        onGoToStorage={handleGoToStorage}
+        onNewGeneration={() => setCurrentView("form")}
+        onGoToStorage={() => setCurrentView("storage")}
+        onDeleteHistory={handleDeleteHistory}
       />
-
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {currentView === "form" ? (
+      <main className="flex-1 overflow-y-auto min-h-0">
+        {currentView === "form" && (
           <QuestionGeneratorForm onGenerate={handleGenerate} />
-        ) : currentView === "results" ? (
+        )}
+        {currentView === "results" && (
           <QuestionResults
             formData={currentFormData}
             historyItem={history.find((h) => h.id === selectedHistoryId)}
-            onBackToForm={handleBackToForm}
+            onBackToForm={() => setCurrentView("form")}
             onSaveToStorage={handleSaveToStorage}
+            questions={selectedHistoryId ? (generationResults[selectedHistoryId]?.questions || []) : []}
           />
-        ) : (
-          <Storage 
-            questionSets={savedQuestionSets} 
+        )}
+        {currentView === "storage" && (
+          <Storage
+            questionSets={savedQuestionSets}
             onDelete={handleDeleteFromStorage}
             onUpdate={handleUpdateStorage}
           />

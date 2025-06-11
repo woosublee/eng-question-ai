@@ -104,10 +104,17 @@ export function QuestionGeneratorForm({ onGenerate }: QuestionGeneratorFormProps
   const handleSubmit = () => {
     if (!isValidForm()) return
 
+    const selectedTypeData = questionTypes.find((qt) => qt.selected)
+    if (!selectedTypeData) {
+      // 이 경우는 isValidForm()에 의해 방지되어야 하지만, 혹시 모를 상황을 대비합니다.
+      return
+    }
+
     onGenerate({
+      type: selectedTypeData.type,
       difficulty,
       grade,
-      questionTypes,
+      count: selectedTypeData.count,
     })
     setHasUnsavedChanges(false)
   }
@@ -120,7 +127,7 @@ export function QuestionGeneratorForm({ onGenerate }: QuestionGeneratorFormProps
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col h-full">
       {/* 상단 헤더 영역 - 고정 */}
       <div className="flex-shrink-0 p-6 bg-white border-b border-gray-200">
         <div className="flex items-center justify-between">
@@ -136,7 +143,7 @@ export function QuestionGeneratorForm({ onGenerate }: QuestionGeneratorFormProps
       </div>
 
       {/* 스크롤 가능한 콘텐츠 영역 */}
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-y-auto p-6 min-h-0">
         <div className="max-w-2xl mx-auto">
           <Card className="p-8 bg-white shadow-sm">
             {/* 학년 선택 */}
@@ -199,20 +206,18 @@ export function QuestionGeneratorForm({ onGenerate }: QuestionGeneratorFormProps
                       <div className="flex items-center gap-2">
                         <Button
                           variant="outline"
-                          size="sm"
+                          size="icon"
                           onClick={() => handleCountChange(index, -1)}
                           disabled={qt.count <= 1}
-                          className="w-8 h-8 p-0"
                         >
                           <Minus className="w-4 h-4" />
                         </Button>
-                        <span className="w-8 text-center text-sm font-medium">{qt.count}</span>
+                        <span className="font-medium text-gray-700 w-6 text-center">{qt.count}</span>
                         <Button
                           variant="outline"
-                          size="sm"
+                          size="icon"
                           onClick={() => handleCountChange(index, 1)}
-                          disabled={qt.count >= 20 || getTotalCount() >= 20}
-                          className="w-8 h-8 p-0"
+                          disabled={qt.count >= 20}
                         >
                           <Plus className="w-4 h-4" />
                         </Button>

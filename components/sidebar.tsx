@@ -1,6 +1,6 @@
 "use client"
 
-import { Plus, Clock, CheckCircle, AlertCircle, Loader, Archive } from "lucide-react"
+import { Plus, Clock, CheckCircle, AlertCircle, Loader, Archive, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { GenerationHistory } from "@/app/page"
@@ -11,9 +11,17 @@ interface SidebarProps {
   onHistorySelect: (id: string) => void
   onNewGeneration: () => void
   onGoToStorage: () => void
+  onDeleteHistory: (id: string) => void
 }
 
-export function Sidebar({ history, selectedHistoryId, onHistorySelect, onNewGeneration, onGoToStorage }: SidebarProps) {
+export function Sidebar({ 
+  history, 
+  selectedHistoryId, 
+  onHistorySelect, 
+  onNewGeneration, 
+  onGoToStorage,
+  onDeleteHistory 
+}: SidebarProps) {
   const getStatusIcon = (status: GenerationHistory["status"]) => {
     switch (status) {
       case "completed":
@@ -51,7 +59,7 @@ export function Sidebar({ history, selectedHistoryId, onHistorySelect, onNewGene
   }
 
   return (
-    <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full overflow-hidden">
+    <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full">
       <div className="flex-shrink-0 p-4 border-b border-gray-200">
         <Button onClick={onNewGeneration} className="w-full bg-blue-600 hover:bg-blue-700">
           <Plus className="w-4 h-4 mr-2" />새 문항 생성
@@ -65,8 +73,8 @@ export function Sidebar({ history, selectedHistoryId, onHistorySelect, onNewGene
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
-        <ScrollArea className="h-full px-4">
+      <div className="flex-1 min-h-0">
+        <ScrollArea className="h-full px-4 overflow-y-auto">
           <div className="space-y-2 pb-4">
             {history.length === 0 ? (
               <div className="text-center py-8 text-gray-500 text-sm">아직 생성된 문항이 없습니다.</div>
@@ -74,31 +82,44 @@ export function Sidebar({ history, selectedHistoryId, onHistorySelect, onNewGene
               history.map((item) => (
                 <div
                   key={item.id}
-                  onClick={() => onHistorySelect(item.id)}
-                  className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                  className={`p-3 rounded-lg border cursor-pointer transition-colors group relative ${
                     selectedHistoryId === item.id
                       ? "bg-blue-50 border-blue-200"
                       : "bg-gray-50 border-gray-200 hover:bg-gray-100"
                   }`}
+                  onClick={() => onHistorySelect(item.id)}
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      {getStatusIcon(item.status)}
-                      <span className="text-sm font-medium">
-                        {getGradeLabel(item.grade)} • 난이도: {item.difficulty}
-                      </span>
-                    </div>
-                    <span className="text-xs text-gray-500">{formatDate(item.timestamp)}</span>
+                  <div 
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDeleteHistory(item.id)
+                    }}
+                  >
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-gray-500 hover:text-red-500 hover:bg-red-50"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
                   </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        {getStatusIcon(item.status)}
+                        <span className="text-sm font-medium">
+                          {getGradeLabel(item.grade)} • 난이도: {item.difficulty}
+                        </span>
+                      </div>
+                      <span className="text-xs text-gray-500">{formatDate(item.timestamp)}</span>
+                    </div>
 
-                  <div className="text-xs text-gray-600 mb-1">총 {item.totalCount}개 문항</div>
+                    <div className="text-xs text-gray-600 mb-1">총 {item.count}개 문항</div>
 
-                  <div className="text-xs text-gray-500">
-                    {item.questionTypes
-                      .slice(0, 2)
-                      .map((qt) => qt.type)
-                      .join(", ")}
-                    {item.questionTypes.length > 2 && ` 외 ${item.questionTypes.length - 2}개`}
+                    <div className="text-xs text-gray-500">
+                      {item.type}
+                    </div>
                   </div>
                 </div>
               ))
