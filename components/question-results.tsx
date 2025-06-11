@@ -20,6 +20,7 @@ interface QuestionResultsProps {
   onBackToForm: () => void
   onSaveToStorage: (title: string, questions: SavedQuestion[], tags: string[]) => void
   questions: SavedQuestion[]
+  onQuestionUpdate?: (updatedQuestion: SavedQuestion) => void
 }
 
 interface GeneratedQuestion {
@@ -32,6 +33,7 @@ interface GeneratedQuestion {
   explanation: string
   difficulty: "상" | "중" | "하"
   grade: string
+  memo?: string
 }
 
 declare module "@/components/ui/badge" {
@@ -45,7 +47,8 @@ export default function QuestionResults({
   historyItem,
   onBackToForm,
   onSaveToStorage,
-  questions
+  questions,
+  onQuestionUpdate
 }: QuestionResultsProps) {
   const { toast } = useToast()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -58,7 +61,6 @@ export default function QuestionResults({
   const [isGenerating, setIsGenerating] = useState(true)
   const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestion[]>([])
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const [showRegenerationMessage, setShowRegenerationMessage] = useState(false)
 
   useEffect(() => {
     if (scrollContainerRef.current) {
@@ -70,15 +72,12 @@ export default function QuestionResults({
     if (historyItem?.status === "generating") {
       setIsGenerating(true)
       setGeneratedQuestions([])
-      setShowRegenerationMessage(false)
     } else if (historyItem?.status === "completed") {
       setIsGenerating(false)
       setGeneratedQuestions(questions)
-      setShowRegenerationMessage(questions.length === 0)
     } else if (historyItem?.status === "failed") {
       setIsGenerating(false)
       setGeneratedQuestions([])
-      setShowRegenerationMessage(true)
     }
   }, [questions, historyItem])
 
@@ -89,10 +88,66 @@ export default function QuestionResults({
 
   const handleSave = () => {
     if (editedQuestion) {
-      setGeneratedQuestions((prev: GeneratedQuestion[]) => prev.map((q: GeneratedQuestion) => (q.id === editedQuestion.id ? editedQuestion : q)))
+      console.log('Saving edited question:', editedQuestion);
+      
+      // generatedQuestions 상태 업데이트
+      setGeneratedQuestions((prev: GeneratedQuestion[]) => {
+        const updated = prev.map((q: GeneratedQuestion) => 
+          q.id === editedQuestion.id ? editedQuestion : q
+        );
+        console.log('Updated generatedQuestions:', updated);
+        return updated;
+      });
+
+      // 부모 컴포넌트에 수정된 문항 전달
+      if (onQuestionUpdate) {
+        onQuestionUpdate(editedQuestion as SavedQuestion);
+      }
+
+      // 로컬 스토리지 직접 업데이트
+      try {
+        const savedData = localStorage.getItem("savedQuestionSets");
+        console.log('Current saved data:', savedData);
+        
+        if (savedData) {
+          const savedQuestionSets = JSON.parse(savedData);
+          console.log('Parsed saved question sets:', savedQuestionSets);
+          
+          const updatedSets = savedQuestionSets.map((set: any) => {
+            const updatedQuestions = set.questions.map((q: any) =>
+              q.id === editedQuestion.id ? editedQuestion : q
+            );
+            console.log(`Updating set ${set.id}:`, {
+              before: set.questions,
+              after: updatedQuestions
+            });
+            return {
+              ...set,
+              questions: updatedQuestions
+            };
+          });
+
+          localStorage.setItem("savedQuestionSets", JSON.stringify(updatedSets));
+          console.log('Successfully saved to localStorage');
+          
+          toast({
+            title: "저장 완료",
+            description: "문항이 성공적으로 저장되었습니다.",
+          });
+        } else {
+          console.log('No saved data found in localStorage');
+        }
+      } catch (error) {
+        console.error('Error saving to localStorage:', error);
+        toast({
+          title: "저장 실패",
+          description: "문항 저장 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      }
     }
-    setEditingId(null)
-    setEditedQuestion(null)
+    setEditingId(null);
+    setEditedQuestion(null);
   }
 
   const handleCancel = () => {
@@ -363,7 +418,7 @@ export default function QuestionResults({
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
               <p className="text-gray-600">문항을 생성하고 있습니다... ({generatedQuestions.length}/{formData?.count || 0})</p>
             </Card>
-          ) : (!formData || !historyItem) ? (
+          ) : historyItem?.status === "failed" ? (
             <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 py-10">
               <p className="text-lg font-semibold mb-2">일시적인 오류로 문항 생성에 실패했습니다.</p>
               <p>잠시 후 다시 시도해 주세요.</p>
@@ -412,7 +467,7 @@ export default function QuestionResults({
                             })
                           }
                           rows={6}
-                          className="w-full"
+                          className="w-full break-words"
                           placeholder="지문을 입력하세요"
                         />
                       </div>
@@ -475,6 +530,22 @@ export default function QuestionResults({
                           좌측 = 아이콘을 드래그하여 선택지 순서를 변경할 수 있습니다.
                         </p>
                       </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-900 mb-3">메모 (선택사항)</label>
+                        <Textarea
+                          value={editedQuestion.memo || ''}
+                          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                            setEditedQuestion({
+                              ...editedQuestion,
+                              memo: e.target.value,
+                            })
+                          }
+                          rows={3}
+                          className="w-full break-words"
+                          placeholder="이 문항에 대한 메모를 입력하세요 (예: 특정 시험 출제, 오답률 높음)"
+                        />
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-6">
@@ -502,7 +573,7 @@ export default function QuestionResults({
 
                       <div>
                         <h3 className="text-sm font-medium text-gray-700 mb-3">발문</h3>
-                        <p className="font-medium text-gray-900 bg-blue-50 p-3 rounded-lg">
+                        <p className="font-medium text-gray-900 bg-blue-50 p-3 rounded-lg break-words">
                           {question.questionStatement}
                         </p>
                       </div>
@@ -510,7 +581,7 @@ export default function QuestionResults({
                       <div>
                         <h3 className="text-sm font-medium text-gray-700 mb-3">지문</h3>
                         <div className="bg-gray-50 p-4 rounded-lg">
-                          <p className="text-sm leading-relaxed">{question.passage}</p>
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{question.passage}</p>
                         </div>
                       </div>
 
@@ -529,7 +600,7 @@ export default function QuestionResults({
                               <span className="text-sm font-medium text-gray-600 mt-0.5 flex-shrink-0">
                                 {optIndex + 1}.
                               </span>
-                              <span className="text-sm flex-1">{option}</span>
+                              <span className="text-sm flex-1 break-words">{option}</span>
                               {optIndex === question.correctAnswer && (
                                 <Badge variant="default" className="bg-green-600 flex-shrink-0">
                                   정답
@@ -542,8 +613,15 @@ export default function QuestionResults({
 
                       <div className="bg-blue-50 p-4 rounded-lg">
                         <h3 className="text-sm font-medium text-blue-800 mb-2">해설</h3>
-                        <p className="text-sm text-blue-800">{question.explanation}</p>
+                        <p className="text-sm text-blue-800 break-words">{question.explanation}</p>
                       </div>
+
+                      {question.memo && (
+                        <Card className="p-4 bg-yellow-50 border-yellow-200">
+                          <h3 className="text-sm font-semibold text-yellow-700 mb-2">메모</h3>
+                          <p className="text-yellow-800 whitespace-pre-wrap break-words">{question.memo}</p>
+                        </Card>
+                      )}
                     </div>
                   )}
                 </Card>
@@ -551,8 +629,7 @@ export default function QuestionResults({
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 py-10">
-              <p className="text-lg font-semibold mb-2">일시적인 오류로 문항 생성에 실패했습니다.</p>
-              <p>잠시 후 다시 시도해 주세요.</p>
+              <p className="text-lg font-semibold mb-2">문항 생성을 시작해주세요.</p>
             </div>
           )}
         </div>

@@ -77,6 +77,7 @@ export interface SavedQuestion {
   options: string[]
   correctAnswer: number
   explanation: string
+  memo?: string
 }
 
 export interface SavedQuestionSet {
@@ -368,6 +369,45 @@ export default function HomePage() {
     }
   }
 
+  const handleQuestionUpdate = (updatedQuestion: SavedQuestion) => {
+    console.log('Updating question in parent:', updatedQuestion);
+    
+    // savedQuestionSets 상태 업데이트
+    setSavedQuestionSets(prevSets => {
+      const updatedSets = prevSets.map(set => ({
+        ...set,
+        questions: set.questions.map(q => 
+          q.id === updatedQuestion.id ? updatedQuestion : q
+        )
+      }));
+      
+      // 로컬 스토리지 업데이트
+      localStorage.setItem("savedQuestionSets", JSON.stringify(updatedSets));
+      console.log('Updated savedQuestionSets in localStorage');
+      
+      return updatedSets;
+    });
+
+    // generationResults 상태 업데이트
+    setGenerationResults(prevResults => {
+      const updatedResults = { ...prevResults };
+      Object.keys(updatedResults).forEach(historyId => {
+        const result = updatedResults[historyId];
+        if (result) {
+          result.questions = result.questions.map(q =>
+            q.id === updatedQuestion.id ? updatedQuestion : q
+          );
+        }
+      });
+      
+      // 로컬 스토리지 업데이트
+      localStorage.setItem("generationResults", JSON.stringify(updatedResults));
+      console.log('Updated generationResults in localStorage');
+      
+      return updatedResults;
+    });
+  }
+
   // 현재 저장된 세트 수 로깅
   console.log("📊 현재 savedQuestionSets 상태:", savedQuestionSets)
 
@@ -389,9 +429,10 @@ export default function HomePage() {
           <QuestionResults
             formData={currentFormData}
             historyItem={history.find((h) => h.id === selectedHistoryId)}
-            onBackToForm={() => setCurrentView("form")}
+            onBackToForm={handleBackToForm}
             onSaveToStorage={handleSaveToStorage}
             questions={selectedHistoryId ? (generationResults[selectedHistoryId]?.questions || []) : []}
+            onQuestionUpdate={handleQuestionUpdate}
           />
         )}
         {currentView === "storage" && (

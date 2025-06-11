@@ -21,7 +21,6 @@ interface StorageProps {
 export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
   const { toast } = useToast()
   // 컴포넌트 렌더링 시 전달받은 데이터 확인
-  console.log("Storage 컴포넌트에 전달된 questionSets:", questionSets)
 
   const [searchTerm, setSearchTerm] = useState("")
   const [filterGrade, setFilterGrade] = useState<string>("all")
@@ -30,6 +29,8 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
   const [editedSet, setEditedSet] = useState<SavedQuestionSet | null>(null)
+  const [tagInputValue, setTagInputValue] = useState<string>('')
+  const [isComposing, setIsComposing] = useState(false)
 
   const getGradeLabel = (gradeValue: string) => {
     const gradeLabels: Record<string, string> = {
@@ -62,6 +63,7 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
     setEditedSet(set)
     setIsEditMode(false)
     setIsDetailOpen(true)
+    setTagInputValue('')
   }
 
   const handleEdit = () => {
@@ -70,6 +72,16 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
 
   const handleSave = () => {
     if (!editedSet) return
+
+    // 제목이 비어있는지 확인
+    if (!editedSet.title.trim()) {
+      toast({
+        title: "제목을 입력해주세요",
+        description: "문제 세트의 제목은 필수입니다.",
+        variant: "destructive",
+      })
+      return
+    }
 
     try {
       onUpdate(editedSet.id, editedSet)
@@ -92,6 +104,74 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
     setEditedSet(selectedSet)
     setIsEditMode(false)
   }
+
+  const handleDialogClose = (open: boolean) => {
+    if (!open) {
+      // 다이얼로그가 닫힐 때 수정 모드라면 취소 처리
+      if (isEditMode) {
+        handleCancel()
+      }
+      setIsDetailOpen(false)
+      setTagInputValue('')
+    }
+  }
+
+  const handleTagChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setTagInputValue(e.target.value);
+  };
+
+  const handleAddTagOnBlur = () => {
+    if (isComposing || !editedSet || !tagInputValue.trim()) return; 
+
+    // Robust normalization and cleaning of the input string
+    // Allow only alphanumeric, Korean characters, and spaces. Remove all other characters.
+    const cleanedInputValue = tagInputValue
+      .normalize('NFC') // Normalize Unicode characters
+      .replace(/\u200B/g, '') // Remove Zero Width Space
+      .replace(/\u00A0/g, ' ') // Replace Non-breaking space with regular space
+      .replace(/[^a-zA-Z0-9가-힣 ]/g, '') // Remove any character that is not alphanumeric, Korean, or space
+      .replace(/\s\s+/g, ' ') // Replace multiple spaces with a single space
+      .trim(); // Trim leading/trailing whitespace again after cleaning
+
+    let tagsToAdd: string[] = [];
+
+    // If the cleaned input contains a space, split by it. Otherwise, treat as a single tag.
+    if (cleanedInputValue.includes(' ')) {
+      tagsToAdd = cleanedInputValue.split(' ')
+        .map(tag => tag.trim())
+        .filter(tag => tag.length > 0);
+    } else {
+      // If no space, and it's not empty, add it as a single tag
+      if (cleanedInputValue.length > 0) {
+        tagsToAdd = [cleanedInputValue];
+      }
+    }
+
+    const uniqueNewTags = tagsToAdd.filter(tag => !editedSet.tags.includes(tag));
+
+    if (editedSet) {
+      setEditedSet(prev => ({
+        ...prev!,
+        tags: [...(prev?.tags || []), ...uniqueNewTags]
+      }));
+    }
+    setTagInputValue('');
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !isComposing) { // Only process Enter if not composing
+      e.preventDefault(); // Prevent form submission
+      handleAddTagOnBlur(); // Use the same logic as blur
+    }
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    if (!editedSet) return;
+    setEditedSet(prev => ({
+      ...prev!,
+      tags: prev!.tags.filter(tag => tag !== tagToRemove)
+    }));
+  };
 
   const handleExportSet = (set: SavedQuestionSet) => {
     const exportData = {
@@ -252,128 +332,163 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
-
-                  <Dialog open={isDetailOpen && selectedSet?.id === set.id} onOpenChange={setIsDetailOpen}>
-                    <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0">
-                      <DialogHeader className="p-6 pb-4 border-b border-gray-200">
-                        <DialogTitle className="flex items-center justify-between text-2xl font-bold text-gray-900">
-                          {isEditMode ? (
-                            <Input
-                              value={editedSet?.title || ""}
-                              onChange={(e) => setEditedSet(prev => prev ? { ...prev, title: e.target.value } : null)}
-                              className="text-xl font-bold px-3 py-2 border border-gray-300 rounded-md focus:border-blue-500 focus:ring-blue-500 focus:ring-1"
-                              placeholder="제목을 입력하세요"
-                            />
-                          ) : (
-                            selectedSet?.title
-                          )}
-                          <div className="flex gap-2">
-                            {isEditMode ? (
-                              <>
-                                <Button onClick={handleSave}>저장</Button>
-                                <Button variant="outline" onClick={handleCancel}>취소</Button>
-                              </>
-                            ) : (
-                              <Button variant="outline" onClick={handleEdit}>
-                                <Edit className="w-4 h-4 mr-2" />수정
-                              </Button>
-                            )}
-                          </div>
-                        </DialogTitle>
-                      </DialogHeader>
-                      <div className="flex-1 overflow-auto p-6">
-                        {selectedSet && (
-                          <div className="space-y-6">
-                            <div className="flex items-center gap-2 text-sm text-gray-600 mb-4">
-                              <Badge variant="secondary">{selectedSet.questions[0]?.type}</Badge>
-                              <Badge variant="secondary">{getGradeLabel(selectedSet.questions[0]?.grade)}</Badge>
-                              <Badge variant="outline">난이도: {selectedSet.questions[0]?.difficulty}</Badge>
-                              <Calendar className="w-4 h-4" />
-                              <span>{new Date(selectedSet.savedAt).toLocaleDateString()}</span>
-                              {selectedSet.tags.length > 0 && (
-                                <div className="flex items-center gap-2 ml-4">
-                                  <Tag className="w-4 h-4 text-gray-400" />
-                                  <div className="flex flex-wrap gap-1">
-                                    {selectedSet.tags.map((tag, index) => (
-                                      <Badge key={index} variant="outline" className="text-xs">
-                                        {tag}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-
-                            {selectedSet.questions.map((question, qIndex) => (
-                              <Card key={question.id} className="p-6">
-                                <div className="flex items-start justify-between mb-4">
-                                  <div className="flex items-center gap-3">
-                                    <span className="text-sm font-medium text-gray-500">문제 {qIndex + 1}</span>
-                                    <Badge variant="outline" className="text-xs">
-                                      {question.type}
-                                    </Badge>
-                                    <Badge variant="outline">{getGradeLabel(question.grade)}</Badge>
-                                    <Badge variant="outline">{question.difficulty}</Badge>
-                                  </div>
-                                </div>
-
-                                <div>
-                                  <h3 className="text-sm font-medium text-gray-700 mb-3">발문</h3>
-                                  <p className="font-medium text-gray-900 bg-blue-50 p-3 rounded-lg">
-                                    {question.questionStatement}
-                                  </p>
-                                </div>
-
-                                <div>
-                                  <h3 className="text-sm font-medium text-gray-700 mb-3">지문</h3>
-                                  <div className="bg-gray-50 p-4 rounded-lg">
-                                    <p className="text-sm leading-relaxed">{question.passage}</p>
-                                  </div>
-                                </div>
-
-                                <div>
-                                  <h3 className="text-sm font-medium text-gray-700 mb-3">선택지</h3>
-                                  <div className="space-y-2">
-                                    {question.options.map((option, optIndex) => (
-                                      <div
-                                        key={optIndex}
-                                        className={`flex items-start gap-2 p-3 rounded-lg border ${
-                                          optIndex === question.correctAnswer
-                                            ? "bg-green-50 border-green-200"
-                                            : "bg-gray-50 border-gray-200"
-                                        }`}
-                                      >
-                                        <span className="text-sm font-medium text-gray-600 mt-0.5 flex-shrink-0">
-                                          {optIndex + 1}.
-                                        </span>
-                                        <span className="text-sm flex-1">{option}</span>
-                                        {optIndex === question.correctAnswer && (
-                                          <Badge variant="default" className="bg-green-600 flex-shrink-0">
-                                            정답
-                                          </Badge>
-                                        )}
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                <div className="bg-blue-50 p-4 rounded-lg">
-                                  <h3 className="text-sm font-medium text-blue-800 mb-2">해설</h3>
-                                  <p className="text-sm text-blue-800">{question.explanation}</p>
-                                </div>
-                              </Card>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </DialogContent>
-                  </Dialog>
                 </Card>
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {/* 세트 상세 보기 다이얼로그 */}
+      <Dialog open={isDetailOpen} onOpenChange={handleDialogClose}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              {isEditMode ? (
+                <div className="flex-1 mr-4">
+                  <Input
+                    value={editedSet?.title || ''}
+                    onChange={(e) => setEditedSet(prev => prev ? { ...prev, title: e.target.value } : null)}
+                    placeholder="세트 제목을 입력하세요"
+                    className="text-lg font-semibold"
+                  />
+                </div>
+              ) : (
+                <span className="text-lg font-semibold">{selectedSet?.title}</span>
+              )}
+              <div className="flex items-center gap-2">
+                {isEditMode ? (
+                  <>
+                    <Button variant="outline" size="sm" onClick={handleCancel}>
+                      취소
+                    </Button>
+                    <Button size="sm" onClick={handleSave}>
+                      저장
+                    </Button>
+                  </>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={handleEdit}>
+                    <Edit className="w-4 h-4 mr-1" />
+                    수정
+                  </Button>
+                )}
+              </div>
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            {isEditMode && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">태그</label>
+                  {isEditMode && editedSet && (
+                    <div className="mt-4">
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {editedSet.tags.map((tag, index) => (
+                          <Badge key={index} className="flex items-center gap-1">
+                            {tag}
+                            <button
+                              onClick={() => handleRemoveTag(tag)}
+                              className="ml-1 text-xs opacity-70 hover:opacity-100 focus:outline-none"
+                            >
+                              x
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                      <Input
+                        type="text"
+                        placeholder="태그를 입력하고 공백 또는 Enter를 눌러 추가하세요."
+                        value={tagInputValue}
+                        onChange={handleTagChange}
+                        onBlur={handleAddTagOnBlur}
+                        onKeyDown={handleKeyDown}
+                        onCompositionStart={() => setIsComposing(true)}
+                        onCompositionEnd={() => setIsComposing(false)}
+                        className="w-full"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {selectedSet && (
+              <>
+                <div className="flex items-center gap-2 text-sm text-gray-600 mb-4">
+                  <Badge variant="secondary">{selectedSet.questions[0]?.type}</Badge>
+                  <Badge variant="outline">{getGradeLabel(selectedSet.questions[0]?.grade)}</Badge>
+                  <Badge variant="outline">난이도: {selectedSet.questions[0]?.difficulty}</Badge>
+                </div>
+                {selectedSet.tags && selectedSet.tags.length > 0 && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600 mb-4">
+                        <Tag className="w-4 h-4 text-gray-400" />
+                        <div className="flex flex-wrap gap-1">
+                            {selectedSet.tags.map((tag, index) => (
+                                <Badge key={index} variant="outline" className="text-xs">
+                                    {tag}
+                                </Badge>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                {selectedSet.questions.map((question, index) => (
+                  <Card key={question.id} className="p-6">
+                    <div className="space-y-4">
+                      <div>
+                        <h3 className="font-medium text-gray-900 bg-blue-50 p-3 rounded-lg">
+                          {question.questionStatement}
+                        </h3>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-700 mb-3">지문</h3>
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap">{question.passage}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-700 mb-3">선택지</h3>
+                        <div className="space-y-2">
+                          {question.options.map((option, optIndex) => (
+                            <div
+                              key={optIndex}
+                              className={`flex items-start gap-2 p-3 rounded-lg border ${
+                                optIndex === question.correctAnswer
+                                  ? "bg-green-50 border-green-200"
+                                  : "bg-gray-50 border-gray-200"
+                              }`}
+                            >
+                              <span className="text-sm font-medium text-gray-600 mt-0.5 flex-shrink-0">
+                                {optIndex + 1}.
+                              </span>
+                              <span className="text-sm flex-1">{option}</span>
+                              {optIndex === question.correctAnswer && (
+                                <Badge variant="default" className="bg-green-600 flex-shrink-0">
+                                  정답
+                                </Badge>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="bg-blue-50 p-4 rounded-lg">
+                        <h3 className="text-sm font-medium text-blue-800 mb-2">해설</h3>
+                        <p className="text-sm text-blue-800">{question.explanation}</p>
+                      </div>
+                      {question.memo && (
+                        <Card className="p-4 bg-yellow-50 border-yellow-200">
+                          <h3 className="text-sm font-semibold text-yellow-700 mb-2">메모</h3>
+                          <p className="text-yellow-800 whitespace-pre-wrap">{question.memo}</p>
+                        </Card>
+                      )}
+                    </div>
+                  </Card>
+                ))}
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
