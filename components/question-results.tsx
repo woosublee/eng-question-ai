@@ -8,20 +8,21 @@ import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Edit, Download, Archive, CheckCircle, XCircle, GripVertical, ArrowLeft, RefreshCcw } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Edit, Download, Archive, CheckCircle, XCircle, GripVertical, ArrowLeft, RefreshCcw, Loader } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import type { QuestionFormData, GenerationHistory, SavedQuestion } from "@/app/page"
 
 interface QuestionResultsProps {
   formData: QuestionFormData | null
   historyItem: GenerationHistory | undefined
-  onBackToForm: () => void
   onSaveToStorage: (title: string, questions: SavedQuestion[], tags: string[]) => void
   questions: SavedQuestion[]
   onQuestionUpdate?: (updatedQuestion: SavedQuestion) => void
   totalRequestedCount: number
   onRetry: () => void
+  isLoading: boolean
 }
 
 interface GeneratedQuestion {
@@ -46,12 +47,12 @@ declare module "@/components/ui/badge" {
 export default function QuestionResults({
   formData,
   historyItem,
-  onBackToForm,
   onSaveToStorage,
   questions,
   onQuestionUpdate,
   totalRequestedCount,
-  onRetry
+  onRetry,
+  isLoading
 }: QuestionResultsProps) {
   const { toast } = useToast()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -61,7 +62,6 @@ export default function QuestionResults({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editedQuestion, setEditedQuestion] = useState<GeneratedQuestion | null>(null)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
-  const [isGenerating, setIsGenerating] = useState(true)
   const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestion[]>([])
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
@@ -72,17 +72,8 @@ export default function QuestionResults({
   }, [historyItem?.id])
 
   useEffect(() => {
-    if (historyItem?.status === "generating") {
-      setIsGenerating(true)
-      setGeneratedQuestions(questions)
-    } else if (historyItem?.status === "completed") {
-      setIsGenerating(false)
-      setGeneratedQuestions(questions)
-    } else if (historyItem?.status === "failed") {
-      setIsGenerating(false)
-      setGeneratedQuestions([])
-    }
-  }, [questions, historyItem])
+    setGeneratedQuestions(questions)
+  }, [questions])
 
   const handleEdit = (question: GeneratedQuestion) => {
     setEditingId(question.id)
@@ -304,13 +295,9 @@ export default function QuestionResults({
 
   return (
     <div className="flex-1 flex flex-col h-full">
-      <div className="flex-shrink-0 p-6 bg-white border-b border-gray-200">
+      <div className="flex-shrink-0 px-5 py-3.5 bg-white border-b border-gray-200">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="outline" onClick={onBackToForm}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              뒤로
-            </Button>
             <div>
               <h1 className="text-2xl font-bold text-gray-900">생성된 문항</h1>
               <p className="text-sm text-gray-500">
@@ -320,15 +307,15 @@ export default function QuestionResults({
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={handleExport} disabled={isGenerating || !formData || !historyItem}>
+            <Button variant="outline" onClick={handleExport} disabled={isLoading || !formData || !historyItem}>
               <Download className="w-4 h-4 mr-2" />
               내보내기
             </Button>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <Dialog>
               <DialogTrigger asChild>
                 <Button
                   variant="outline"
-                  disabled={selectedQuestions.size === 0 || isGenerating || !formData || !historyItem}
+                  disabled={selectedQuestions.size === 0 || isLoading || !formData || !historyItem}
                 >
                   <Archive className="w-4 h-4 mr-2" />
                   보관함에 저장 ({selectedQuestions.size})
@@ -362,7 +349,7 @@ export default function QuestionResults({
                     </Button>
                     <Button
                       onClick={handleSaveToStorageClick}
-                      disabled={!saveTitle.trim() || selectedQuestions.size === 0 || isGenerating}
+                      disabled={!saveTitle.trim() || selectedQuestions.size === 0 || isLoading}
                     >
                       저장
                     </Button>
@@ -372,42 +359,42 @@ export default function QuestionResults({
             </Dialog>
           </div>
         </div>
-
-        {!isGenerating && (
-          <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-200">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                checked={isAllSelected}
-                ref={(el) => {
-                  if (el) {
-                    (el as HTMLInputElement).indeterminate = isPartiallySelected
-                  }
-                }}
-                onCheckedChange={handleSelectAll}
-                disabled={isGenerating}
-              />
-              <span className="text-sm font-medium text-gray-700">{isAllSelected ? "전체 해제" : "전체 선택"}</span>
-            </div>
-            {selectedQuestions.size > 0 && (
-              <span className="text-sm text-blue-600">{selectedQuestions.size}개 문항 선택됨</span>
-            )}
-          </div>
-        )}
       </div>
 
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6 min-h-0">
+      {!isLoading && (
+        <div className="flex items-center gap-4 mt-4">
+          <div className="flex items-center gap-2 ml-8">
+            <Checkbox
+              checked={isAllSelected}
+              ref={(el) => {
+                if (el) {
+                  (el as HTMLInputElement).indeterminate = isPartiallySelected
+                }
+              }}
+              onCheckedChange={handleSelectAll}
+              disabled={isLoading}
+            />
+            <span className="text-sm font-medium text-gray-700">{isAllSelected ? "전체 해제" : "전체 선택"}</span>
+          </div>
+          {selectedQuestions.size > 0 && (
+            <span className="text-sm text-blue-600">{selectedQuestions.size}개 문항 선택됨</span>
+          )}
+        </div>
+      )}
+
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6 min-h-0 relative">
         <div className="max-w-4xl mx-auto">
-          {isGenerating ? (
-            <div className="flex flex-col items-center justify-center p-8 border rounded-lg bg-gray-50 dark:bg-gray-800">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-gray-100 mb-4"></div>
-              <p className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+          {isLoading && generatedQuestions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-[calc(100vh-12rem)]">
+              <Loader className="h-12 w-12 mb-4 animate-spin text-blue-500" />
+              <p className="text-lg font-semibold text-gray-700">
                 문항을 생성 중입니다... ({generatedQuestions.length} / {totalRequestedCount})
               </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+              <p className="text-sm text-gray-500 mt-2">
                 잠시만 기다려 주세요.
               </p>
             </div>
-          ) : historyItem?.status === "failed" ? (
+          ) : historyItem?.status === "failed" && !isLoading ? (
             <div className="flex flex-col items-center justify-center p-8 border rounded-lg bg-red-50 bg-opacity-70 dark:bg-red-900 dark:bg-opacity-70 text-red-700 dark:text-red-200">
               <XCircle className="h-12 w-12 mb-4" />
               <p className="text-lg font-semibold">문항 생성에 실패했습니다.</p>
@@ -417,13 +404,15 @@ export default function QuestionResults({
                 재시도
               </Button>
             </div>
-          ) : historyItem?.status === "completed" && generatedQuestions.length === 0 ? (
+          ) : historyItem?.status === "completed" && generatedQuestions.length === 0 && !isLoading ? (
             <div className="flex flex-col items-center justify-center p-8 border rounded-lg bg-yellow-50 bg-opacity-70 dark:bg-yellow-900 dark:bg-opacity-70 text-yellow-700 dark:text-yellow-200">
               <XCircle className="h-12 w-12 mb-4" />
               <p className="text-lg font-semibold">생성된 문항이 없습니다.</p>
               <p className="text-sm mt-2">조건에 맞는 문항을 생성하지 못했습니다.</p>
             </div>
-          ) : generatedQuestions.length > 0 ? (
+          ) : null}
+
+          {generatedQuestions.length > 0 ? (
             <div className="space-y-6">
               {generatedQuestions.map((question: GeneratedQuestion, index: number) => (
                 <Card key={question.id} className="p-6">
@@ -627,13 +616,18 @@ export default function QuestionResults({
                 </Card>
               ))}
             </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 py-10">
-              <p className="text-lg font-semibold mb-2">문항 생성을 시작해주세요.</p>
-            </div>
-          )}
+          ) : null}
         </div>
       </div>
+
+      {isLoading && generatedQuestions.length > 0 && (
+        <div className="fixed bottom-4 left-[calc(50vw+10rem)] -translate-x-1/2 p-4 border rounded-lg bg-blue-50 bg-opacity-70 dark:bg-blue-900 dark:bg-opacity-70 text-blue-700 dark:text-blue-200 shadow-lg z-50 flex items-center gap-3">
+          <Loader className="h-6 w-6 animate-spin" />
+          <p className="text-sm font-semibold">
+            문항 생성 중... ({generatedQuestions.length} / {totalRequestedCount})
+          </p>
+        </div>
+      )}
     </div>
   )
 }

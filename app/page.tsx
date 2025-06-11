@@ -7,6 +7,7 @@ import QuestionResults from "@/components/question-results"
 import { Storage } from "@/components/storage"
 import { QuestionSet } from '@/types/question'
 import { toast } from "@/components/ui/use-toast"
+import { Loader } from "lucide-react"
 
 const QUESTION_TYPES = [
   "목적 찾기",
@@ -196,6 +197,7 @@ export default function HomePage() {
     setCurrentView("results");
     setSelectedHistoryId(newHistory.id);
     setCurrentFormData(formData);
+    setIsLoading(true); // Set loading to true when generation starts
 
     // Initialize generation results for this history item
     setGenerationResults(prev => ({
@@ -306,6 +308,8 @@ export default function HomePage() {
         description: "문항 생성 중 알 수 없는 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false); // Always set loading to false when generation finishes (success or failure)
     }
   };
 
@@ -389,14 +393,14 @@ export default function HomePage() {
         onNewGeneration={handleBackToForm}
       />
 
-      <main className="flex-1 flex flex-col">
+      <main className="flex-1 flex flex-col relative">
         {currentView === "form" && <QuestionGeneratorForm onGenerate={handleGenerate} />}
         {currentView === "results" && currentFormData && (
           <QuestionResults
             formData={currentFormData}
             historyItem={history.find(item => item.id === selectedHistoryId)}
-            onBackToForm={handleBackToForm}
             onSaveToStorage={handleSaveToStorage}
+            isLoading={isLoading}
             questions={generationResults[selectedHistoryId || ""]?.questions || []}
             onQuestionUpdate={handleQuestionUpdate}
             totalRequestedCount={currentFormData.types.reduce((sum, t) => sum + t.count, 0)}

@@ -60,9 +60,10 @@ export function Sidebar({
 
   return (
     <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full">
-      <div className="flex-shrink-0 p-4 border-b border-gray-200">
+      <div className="flex-shrink-0 p-5 border-b border-gray-200">
         <Button onClick={onNewGeneration} className="w-full bg-blue-600 hover:bg-blue-700">
-          <Plus className="w-4 h-4 mr-2" />새 문항 생성
+          <Plus className="w-4 h-4 mr-2" />
+          새 문항 생성
         </Button>
       </div>
 
