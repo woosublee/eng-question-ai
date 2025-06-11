@@ -166,6 +166,13 @@ export default function HomePage() {
       return
     }
 
+    // 실패한 히스토리를 선택한 경우
+    if (selectedHistory.status === "failed") {
+      // 실패한 경우, 자동 재시도하지 않고 해당 상태를 표시
+      // (QuestionResults 컴포넌트가 실패 상태를 적절히 렌더링할 것임)
+      return
+    }
+
     // 새로운 생성 요청
     handleGenerate({
       types: [{ type: selectedHistory.type, count: selectedHistory.count }],
@@ -253,60 +260,48 @@ export default function HomePage() {
   };
 
   const handleBackToForm = () => {
-    setCurrentView("form")
-    setSelectedHistoryId(null)
-  }
+    setCurrentView("form");
+    setSelectedHistoryId(null);
+    setCurrentFormData(null);
+    setIsLoading(false);
+  };
 
   const handleGoToStorage = () => {
-    setCurrentView("storage")
-  }
+    setCurrentView("storage");
+  };
 
   const handleSaveToStorage = (title: string, questions: SavedQuestion[], tags: string[] = []) => {
     const newSet: SavedQuestionSet = {
-      id: Date.now().toString(),
+      id: `set-${Date.now()}`,
       title,
       questions,
       savedAt: new Date(),
-      tags
-    }
-
-    setSavedQuestionSets((prev) => [newSet, ...prev])
-    localStorage.setItem("savedQuestionSets", JSON.stringify([newSet, ...savedQuestionSets]))
+      tags,
+    };
+    setSavedQuestionSets(prev => [newSet, ...prev]);
     toast({
-      title: "저장 완료",
-      description: "문제가 보관함에 저장되었습니다.",
-    })
-  }
+      title: "문제 세트 저장 완료",
+      description: `${title}이(가) 보관함에 저장되었습니다.`, 
+    });
+  };
 
   const handleDeleteFromStorage = (setId: string) => {
-    // 로컬 스토리지에서 데이터 가져오기
-    const existingData = localStorage.getItem("savedQuestionSets")
-    const existingSets: SavedQuestionSet[] = existingData ? JSON.parse(existingData) : []
-    
-    // 해당 세트 삭제
-    const updatedSets = existingSets.filter((set) => set.id !== setId)
-    
-    // 로컬 스토리지 업데이트
-    localStorage.setItem("savedQuestionSets", JSON.stringify(updatedSets))
-    
-    // 상태 업데이트
-    setSavedQuestionSets(updatedSets)
-  }
+    setSavedQuestionSets(prev => prev.filter(set => set.id !== setId));
+    toast({
+      title: "문제 세트 삭제 완료",
+      description: "선택한 문제 세트가 삭제되었습니다.",
+    });
+  };
 
   const handleUpdateStorage = (setId: string, updatedSet: SavedQuestionSet) => {
-    // 로컬 스토리지에서 데이터 가져오기
-    const existingData = localStorage.getItem("savedQuestionSets")
-    const existingSets: SavedQuestionSet[] = existingData ? JSON.parse(existingData) : []
-    
-    // 해당 세트 업데이트
-    const updatedSets = existingSets.map((set) => (set.id === setId ? updatedSet : set))
-    
-    // 로컬 스토리지 업데이트
-    localStorage.setItem("savedQuestionSets", JSON.stringify(updatedSets))
-    
-    // 상태 업데이트
-    setSavedQuestionSets(updatedSets)
-  }
+    setSavedQuestionSets(prev =>
+      prev.map(set => (set.id === setId ? updatedSet : set))
+    );
+    toast({
+      title: "문제 세트 업데이트 완료",
+      description: `${updatedSet.title}이(가) 업데이트되었습니다.`, 
+    });
+  };
 
   const handleDeleteHistory = (historyId: string) => {
     const updatedHistory = history.filter(item => item.id !== historyId)
@@ -334,28 +329,28 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen overflow-hidden">
       <Sidebar
         history={history}
         selectedHistoryId={selectedHistoryId}
         onHistorySelect={handleHistorySelect}
-        onNewGeneration={() => setCurrentView("form")}
-        onGoToStorage={() => setCurrentView("storage")}
         onDeleteHistory={handleDeleteHistory}
+        onGoToStorage={handleGoToStorage}
+        onNewGeneration={handleBackToForm}
       />
-      <main className="flex-1 overflow-y-auto min-h-0">
-        {currentView === "form" && (
-          <QuestionGeneratorForm onGenerate={handleGenerate} />
-        )}
-        {currentView === "results" && (
+
+      <main className="flex-1 flex flex-col">
+        {currentView === "form" && <QuestionGeneratorForm onGenerate={handleGenerate} />}
+        {currentView === "results" && currentFormData && (
           <QuestionResults
             formData={currentFormData}
-            historyItem={history.find((h) => h.id === selectedHistoryId)}
+            historyItem={history.find(item => item.id === selectedHistoryId)}
             onBackToForm={handleBackToForm}
             onSaveToStorage={handleSaveToStorage}
-            questions={selectedHistoryId ? (generationResults[selectedHistoryId]?.questions || []) : []}
+            questions={generationResults[selectedHistoryId || ""]?.questions || []}
             onQuestionUpdate={handleQuestionUpdate}
-            totalRequestedCount={selectedHistoryId ? (history.find((h) => h.id === selectedHistoryId)?.count || 0) : 0}
+            totalRequestedCount={currentFormData.types.reduce((sum, t) => sum + t.count, 0)}
+            onRetry={() => handleGenerate(currentFormData)}
           />
         )}
         {currentView === "storage" && (

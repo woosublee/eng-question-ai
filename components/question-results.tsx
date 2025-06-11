@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Edit, Download, Archive, CheckCircle, XCircle, GripVertical, ArrowLeft } from "lucide-react"
+import { Edit, Download, Archive, CheckCircle, XCircle, GripVertical, ArrowLeft, RefreshCcw } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import type { QuestionFormData, GenerationHistory, SavedQuestion } from "@/app/page"
 
@@ -21,6 +21,7 @@ interface QuestionResultsProps {
   questions: SavedQuestion[]
   onQuestionUpdate?: (updatedQuestion: SavedQuestion) => void
   totalRequestedCount: number
+  onRetry: () => void
 }
 
 interface GeneratedQuestion {
@@ -49,7 +50,8 @@ export default function QuestionResults({
   onSaveToStorage,
   questions,
   onQuestionUpdate,
-  totalRequestedCount
+  totalRequestedCount,
+  onRetry
 }: QuestionResultsProps) {
   const { toast } = useToast()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -410,6 +412,10 @@ export default function QuestionResults({
               <XCircle className="h-12 w-12 mb-4" />
               <p className="text-lg font-semibold">문항 생성에 실패했습니다.</p>
               <p className="text-sm mt-2">문제가 발생했습니다. 잠시 후 다시 시도해 주세요.</p>
+              <Button onClick={onRetry} className="mt-4">
+                <RefreshCcw className="w-4 h-4 mr-2" />
+                재시도
+              </Button>
             </div>
           ) : historyItem?.status === "completed" && generatedQuestions.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-8 border rounded-lg bg-yellow-50 bg-opacity-70 dark:bg-yellow-900 dark:bg-opacity-70 text-yellow-700 dark:text-yellow-200">
