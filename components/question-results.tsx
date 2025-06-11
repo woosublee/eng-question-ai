@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Edit, Download, Archive, CheckCircle, XCircle, GripVertical } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import type { QuestionFormData, GenerationHistory, SavedQuestion } from "@/app/page"
-import { generateQuestion } from "@/lib/openai"
+// import { generateQuestion } from "@/lib/generate-question" // REMOVED: No longer used directly
 
 interface QuestionResultsProps {
   formData: QuestionFormData | null
