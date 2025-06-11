@@ -7,9 +7,17 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Plus, Minus } from "lucide-react"
 import type { QuestionFormData } from "@/app/page"
+import { Input } from "@/components/ui/input"
 
 interface QuestionGeneratorFormProps {
-  onGenerate: (data: QuestionFormData) => void
+  onGenerate: (data: {
+    types: Array<{
+      type: string;
+      count: number;
+    }>;
+    difficulty: "상" | "중" | "하";
+    grade: string;
+  }) => void;
 }
 
 const QUESTION_TYPES = [
@@ -46,14 +54,14 @@ const GRADE_OPTIONS = [
 ]
 
 export function QuestionGeneratorForm({ onGenerate }: QuestionGeneratorFormProps) {
+  const [grade, setGrade] = useState("")
   const [difficulty, setDifficulty] = useState<"상" | "중" | "하">("중")
-  const [grade, setGrade] = useState<string>("")
   const [questionTypes, setQuestionTypes] = useState(
-    QUESTION_TYPES.map((type) => ({
+    QUESTION_TYPES.map(type => ({
       type,
-      count: 1,
       selected: false,
-    })),
+      count: 1
+    }))
   )
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
@@ -69,52 +77,103 @@ export function QuestionGeneratorForm({ onGenerate }: QuestionGeneratorFormProps
     return () => window.removeEventListener("beforeunload", handleBeforeUnload)
   }, [hasUnsavedChanges])
 
-  const handleDifficultyChange = (newDifficulty: "상" | "중" | "하") => {
-    setDifficulty(newDifficulty)
+  const handleGradeChange = (value: string) => {
+    setGrade(value)
     setHasUnsavedChanges(true)
   }
 
-  const handleGradeChange = (newGrade: string) => {
-    setGrade(newGrade)
+  const handleDifficultyChange = (level: "상" | "중" | "하") => {
+    setDifficulty(level)
     setHasUnsavedChanges(true)
   }
 
-  const handleQuestionTypeToggle = (index: number) => {
-    setQuestionTypes((prev) => prev.map((qt, i) => (i === index ? { ...qt, selected: !qt.selected } : qt)))
-    setHasUnsavedChanges(true)
+  const handleTypeSelection = (type: string) => {
+    setQuestionTypes(prev =>
+      prev.map(qt => {
+        if (qt.type === type) {
+          const newSelected = !qt.selected;
+          return {
+            ...qt,
+            selected: newSelected,
+            count: newSelected ? 1 : qt.count
+          };
+        }
+        return qt;
+      })
+    );
+    setHasUnsavedChanges(true);
   }
 
-  const handleCountChange = (index: number, delta: number) => {
-    setQuestionTypes((prev) =>
-      prev.map((qt, i) => (i === index ? { ...qt, count: Math.max(1, Math.min(20, qt.count + delta)) } : qt)),
+  const handleCountChange = (type: string, delta: number) => {
+    setQuestionTypes(prev =>
+      prev.map(qt =>
+        qt.type === type
+          ? { ...qt, count: Math.max(1, qt.count + delta) }
+          : qt
+      )
     )
     setHasUnsavedChanges(true)
   }
 
+  const handleDirectCountChange = (type: string, value: string) => {
+    setQuestionTypes(prev => {
+      if (value === "") {
+        return prev.map(qt => (qt.type === type ? { ...qt, count: 0 } : qt));
+      }
+
+      let newCount = parseInt(value, 10);
+      if (isNaN(newCount)) {
+        newCount = 1;
+      }
+      newCount = Math.max(1, Math.min(newCount, 20));
+
+      const totalCountOfOtherSelectedTypes = prev
+        .filter(qt => qt.type !== type && qt.selected)
+        .reduce((sum, qt) => sum + qt.count, 0);
+
+      const maxAllowedForCurrentType = 20 - totalCountOfOtherSelectedTypes;
+
+      if (newCount > maxAllowedForCurrentType) {
+        newCount = Math.max(1, maxAllowedForCurrentType);
+      }
+
+      return prev.map(qt =>
+        qt.type === type
+          ? { ...qt, count: newCount }
+          : qt
+      );
+    });
+    setHasUnsavedChanges(true);
+  }
+
   const getTotalCount = () => {
-    return questionTypes.filter((qt) => qt.selected).reduce((sum, qt) => sum + qt.count, 0)
+    return questionTypes
+      .filter(qt => qt.selected)
+      .reduce((sum, qt) => sum + (qt.count === 0 ? 0 : qt.count), 0);
   }
 
   const isValidForm = () => {
-    const selectedTypes = questionTypes.filter((qt) => qt.selected)
-    const totalCount = getTotalCount()
-    return selectedTypes.length > 0 && totalCount <= 20 && grade !== ""
+    return (
+      grade !== "" &&
+      questionTypes.some(qt => qt.selected) &&
+      getTotalCount() <= 20
+    )
   }
 
   const handleSubmit = () => {
     if (!isValidForm()) return
 
-    const selectedTypeData = questionTypes.find((qt) => qt.selected)
-    if (!selectedTypeData) {
-      // 이 경우는 isValidForm()에 의해 방지되어야 하지만, 혹시 모를 상황을 대비합니다.
-      return
-    }
+    const selectedTypes = questionTypes
+      .filter(qt => qt.selected)
+      .map(qt => ({
+        type: qt.type,
+        count: Math.max(1, qt.count)
+      }))
 
     onGenerate({
-      type: selectedTypeData.type,
+      types: selectedTypes,
       difficulty,
       grade,
-      count: selectedTypeData.count,
     })
     setHasUnsavedChanges(false)
   }
@@ -186,43 +245,65 @@ export function QuestionGeneratorForm({ onGenerate }: QuestionGeneratorFormProps
 
             {/* 유형별 문제 선택 */}
             <div className="mb-8">
-              <h2 className="text-lg font-medium text-gray-700 mb-4">유형별 문제</h2>
+              <h2 className="text-lg font-medium text-gray-700 mb-4">문제 유형</h2>
               <div className="space-y-3">
-                {questionTypes.map((qt, index) => (
+                {questionTypes.map((qt) => (
                   <div
                     key={qt.type}
-                    className="flex items-center justify-between p-3 rounded-lg border border-gray-200"
+                    className="flex items-center justify-between p-3 rounded-lg border border-gray-200 h-[52px]"
                   >
                     <div className="flex items-center gap-3">
                       <Checkbox
                         checked={qt.selected}
-                        onCheckedChange={() => handleQuestionTypeToggle(index)}
-                        className="data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
+                        onCheckedChange={() => handleTypeSelection(qt.type)}
+                        className="data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!qt.selected && getTotalCount() >= 20}
                       />
-                      <span className="text-sm font-medium text-gray-700">{qt.type}</span>
+                      <span className={`text-sm font-medium text-gray-700 ${!qt.selected && getTotalCount() >= 20 ? "opacity-50" : ""}`}>{qt.type}</span>
                     </div>
 
-                    {qt.selected && (
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => handleCountChange(index, -1)}
-                          disabled={qt.count <= 1}
-                        >
-                          <Minus className="w-4 h-4" />
-                        </Button>
-                        <span className="font-medium text-gray-700 w-6 text-center">{qt.count}</span>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => handleCountChange(index, 1)}
-                          disabled={qt.count >= 20}
-                        >
-                          <Plus className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    )}
+                    <div
+                      className={`flex items-center gap-1 w-[100px] justify-end transition-opacity duration-200 min-h-[28px] ${
+                        qt.selected ? "opacity-100" : "opacity-0 pointer-events-none"
+                      }`}
+                    >
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => handleCountChange(qt.type, -1)}
+                        disabled={qt.count <= 1}
+                        className="h-7 w-7"
+                      >
+                        <Minus className="w-3 h-3" />
+                      </Button>
+                      <Input
+                        type="number"
+                        value={qt.count === 0 ? "" : qt.count.toString()}
+                        onChange={(e) => handleDirectCountChange(qt.type, e.target.value)}
+                        onBlur={() => {
+                          if (qt.count === 0) {
+                            setQuestionTypes(prev =>
+                              prev.map(item =>
+                                item.type === qt.type ? { ...item, selected: false } : item
+                              )
+                            );
+                            setHasUnsavedChanges(true);
+                          }
+                        }}
+                        className="w-10 text-center text-sm p-1 border-none focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [-moz-appearance:textfield]"
+                        min={1}
+                        max={20}
+                      />
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => handleCountChange(qt.type, 1)}
+                        disabled={getTotalCount() >= 20}
+                        className="h-7 w-7"
+                      >
+                        <Plus className="w-3 h-3" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>

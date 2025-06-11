@@ -5,7 +5,6 @@ import { Sidebar } from "@/components/sidebar"
 import { QuestionGeneratorForm } from "@/components/question-generator-form"
 import QuestionResults from "@/components/question-results"
 import { Storage } from "@/components/storage"
-// import { generateQuestion } from '@/lib/openai' // REMOVED: Direct OpenAI call
 import { QuestionSet } from '@/types/question'
 import { toast } from "@/components/ui/use-toast"
 
@@ -30,10 +29,12 @@ const QUESTION_TYPES = [
 ]
 
 interface QuestionGenerationParams {
-  type: string
-  difficulty: "상" | "중" | "하"
-  grade: string
-  count: number
+  types: Array<{
+    type: string;
+    count: number;
+  }>;
+  difficulty: "상" | "중" | "하";
+  grade: string;
 }
 
 interface GenerationResult {
@@ -51,10 +52,12 @@ interface GenerationResult {
 }
 
 export interface QuestionFormData {
-  type: string
-  difficulty: "상" | "중" | "하"
-  grade: string
-  count: number
+  types: Array<{
+    type: string;
+    count: number;
+  }>;
+  difficulty: "상" | "중" | "하";
+  grade: string;
 }
 
 export interface GenerationHistory {
@@ -63,7 +66,7 @@ export interface GenerationHistory {
   type: string
   difficulty: "상" | "중" | "하"
   grade: string
-  count: number
+  count: number // Total requested count for this history item
   status: "generating" | "completed" | "failed"
 }
 
@@ -87,38 +90,6 @@ export interface SavedQuestionSet {
   savedAt: Date
   tags: string[]
 }
-
-// 더미 데이터 생성 함수 (주석 처리)
-/*
-function createDummyQuestionSets(): SavedQuestionSet[] {
-  return [
-    {
-      id: "1",
-      title: "환경 문제",
-      savedAt: new Date(),
-      difficulty: "중",
-      grade: "high-2",
-      questions: [
-        {
-          id: "1-1",
-          type: "주제 찾기",
-          passage: "Global warming is one of the most pressing issues of our time...",
-          questionStatement: "What is the main topic of this passage?",
-          options: [
-            "The history of climate change",
-            "The impact of global warming",
-            "Solutions to environmental problems",
-            "The role of governments in environmental protection"
-          ],
-          correctAnswer: 1,
-          explanation: "The passage focuses on the effects and consequences of global warming."
-        }
-      ],
-      tags: ["환경", "기후변화"]
-    }
-  ]
-}
-*/
 
 export default function HomePage() {
   const [currentView, setCurrentView] = useState<"form" | "results" | "storage">("form")
@@ -167,7 +138,6 @@ export default function HomePage() {
 
   // 생성 결과가 변경될 때마다 로컬 스토리지에 저장
   useEffect(() => {
-    console.log("Saving generationResults to local storage:", generationResults)
     localStorage.setItem("generationResults", JSON.stringify(generationResults))
   }, [generationResults])
 
@@ -177,142 +147,110 @@ export default function HomePage() {
 
     setSelectedHistoryId(historyId)
     setCurrentFormData({
-      type: selectedHistory.type,
+      types: [{ type: selectedHistory.type, count: selectedHistory.count }],
       difficulty: selectedHistory.difficulty,
-      grade: selectedHistory.grade,
-      count: selectedHistory.count
+      grade: selectedHistory.grade
     })
     setCurrentView("results")
 
     // 생성 중인 히스토리를 선택한 경우
     if (selectedHistory.status === "generating") {
+      // 이미 진행 중인 경우, 현재 상태를 유지하고 추가 요청을 보내지 않음
       return
     }
 
     // 이미 생성된 결과가 있는 경우
     const existingResult = generationResults[historyId]
     if (existingResult) {
+      // 이미 결과가 있으면 해당 결과를 보여주고 종료
       return
     }
 
     // 새로운 생성 요청
     handleGenerate({
-      type: selectedHistory.type,
+      types: [{ type: selectedHistory.type, count: selectedHistory.count }],
       difficulty: selectedHistory.difficulty,
-      grade: selectedHistory.grade,
-      count: selectedHistory.count
+      grade: selectedHistory.grade
     })
   }
 
   const handleGenerate = async (formData: QuestionFormData) => {
     const newHistory: GenerationHistory = {
-      id: Date.now().toString(),
-      timestamp: new Date(),
-      type: formData.type,
+      id: `history-${Date.now()}`,
+      type: formData.types.map(t => t.type).join(", "),
       difficulty: formData.difficulty,
       grade: formData.grade,
-      count: formData.count,
-      status: "generating",
-    }
-
-    setHistory((prev) => [newHistory, ...prev])
-    setSelectedHistoryId(newHistory.id)
-    setCurrentView("results")
+      count: formData.types.reduce((sum, t) => sum + t.count, 0),
+      timestamp: new Date(),
+      status: "generating"
+    };
 
     try {
-      // 각 문항을 개별적으로 생성하는 Promise 배열 생성
-      const questionPromises = Array(formData.count).fill(null).map(async (_, index) => {
-        try {
-          // Call the API Route instead of direct OpenAI function
-          const response = await fetch('/api/generate-question', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              type: formData.type,
-              difficulty: formData.difficulty,
-              grade: formData.grade,
-              count: 1 // Request one question per API call
-            }),
-          });
+      setHistory(prev => [newHistory, ...prev]);
+      setCurrentView("results");
+      setSelectedHistoryId(newHistory.id);
+      setCurrentFormData(formData);
 
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to fetch question from API Route');
-          }
+      // Call the API Route
+      const response = await fetch('/api/generate-question', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
 
-          const question = await response.json();
-          return {
-            ...question[0],
-            id: `generated-q${Date.now()}-${index}`,
-            type: formData.type,
-            difficulty: formData.difficulty,
-            grade: formData.grade
-          }
-        } catch (error) {
-          console.error(`Error generating question ${index + 1}:`, error)
-          return null
-        }
-      })
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch questions from API Route');
+      }
 
-      // Promise.allSettled를 사용하여 모든 요청이 완료될 때까지 대기
-      const results = await Promise.allSettled(questionPromises)
-      
-      // 성공적으로 생성된 문항만 필터링
-      const successfulQuestions = results
-        .filter((result): result is PromiseFulfilledResult<any> => 
-          result.status === "fulfilled" && result.value !== null
-        )
-        .map((result) => result.value)
+      const questions = await response.json();
+      if (!Array.isArray(questions) || questions.length === 0) {
+        throw new Error('API Route did not return valid questions.');
+      }
+
+      const generatedQuestions = questions.map((question, index) => ({
+        ...question,
+        id: `generated-q${Date.now()}-${newHistory.id}-${index}`,
+        difficulty: formData.difficulty,
+        grade: formData.grade,
+        memo: ""
+      }));
 
       setGenerationResults(prev => ({
         ...prev,
-        [newHistory.id]: { questions: successfulQuestions }
-      }))
+        [newHistory.id]: { questions: generatedQuestions }
+      }));
 
-      setHistory(prev => 
-        prev.map(item => 
-          item.id === newHistory.id 
-            ? { ...item, status: successfulQuestions.length > 0 ? "completed" : "failed" } 
+      setHistory(prev =>
+        prev.map(item =>
+          item.id === newHistory.id
+            ? { ...item, status: "completed" }
             : item
         )
-      )
+      );
 
-      if (successfulQuestions.length === 0) {
-        toast({
-          title: "문항 생성 실패",
-          description: "모든 문항 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.",
-          variant: "destructive",
-        });
-      } else if (successfulQuestions.length < formData.count) {
-        toast({
-          title: "일부 문항 생성 실패",
-          description: `${formData.count}개 중 ${successfulQuestions.length}개의 문항만 생성되었습니다.`, 
-          variant: "default",
-        });
-      } else {
-        toast({
-          title: "문항 생성 완료",
-          description: `${successfulQuestions.length}개의 문항이 성공적으로 생성되었습니다.`, 
-        });
-      }
+      toast({
+        title: "문항 생성 완료",
+        description: `${generatedQuestions.length}개의 문항이 성공적으로 생성되었습니다.`,
+      });
     } catch (error) {
-      console.error("Error in handleGenerate:", error)
-      setHistory(prev => 
-        prev.map(item => 
-          item.id === newHistory.id 
-            ? { ...item, status: "failed" } 
+      console.error("Error in handleGenerate:", error);
+      setHistory(prev =>
+        prev.map(item =>
+          item.id === newHistory.id
+            ? { ...item, status: "failed" }
             : item
         )
-      )
+      );
       toast({
         title: "문항 생성 오류",
         description: "문항 생성 중 알 수 없는 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         variant: "destructive",
-      })
+      });
     }
-  }
+  };
 
   const handleBackToForm = () => {
     setCurrentView("form")
@@ -341,8 +279,6 @@ export default function HomePage() {
   }
 
   const handleDeleteFromStorage = (setId: string) => {
-    console.log("🗑️ 삭제 요청:", setId)
-    
     // 로컬 스토리지에서 데이터 가져오기
     const existingData = localStorage.getItem("savedQuestionSets")
     const existingSets: SavedQuestionSet[] = existingData ? JSON.parse(existingData) : []
@@ -355,7 +291,6 @@ export default function HomePage() {
     
     // 상태 업데이트
     setSavedQuestionSets(updatedSets)
-    console.log("✅ 삭제 후 savedQuestionSets:", updatedSets)
   }
 
   const handleUpdateStorage = (setId: string, updatedSet: SavedQuestionSet) => {
@@ -374,64 +309,29 @@ export default function HomePage() {
   }
 
   const handleDeleteHistory = (historyId: string) => {
-    // 히스토리에서 삭제
-    setHistory(prev => prev.filter(h => h.id !== historyId))
-    
-    // 생성 결과에서 삭제
-    setGenerationResults(prev => {
-      const newResults = { ...prev }
-      delete newResults[historyId]
-      return newResults
-    })
+    const updatedHistory = history.filter(item => item.id !== historyId)
+    setHistory(updatedHistory)
 
-    // 현재 선택된 히스토리가 삭제된 경우 폼으로 돌아가기
-    if (selectedHistoryId === historyId) {
-      setSelectedHistoryId(null)
-      setCurrentView("form")
-    }
+    // 생성 결과도 함께 삭제
+    const updatedResults = { ...generationResults }
+    delete updatedResults[historyId]
+    setGenerationResults(updatedResults)
   }
 
   const handleQuestionUpdate = (updatedQuestion: SavedQuestion) => {
-    console.log('Updating question in parent:', updatedQuestion);
-    
-    // savedQuestionSets 상태 업데이트
-    setSavedQuestionSets(prevSets => {
-      const updatedSets = prevSets.map(set => ({
-        ...set,
-        questions: set.questions.map(q => 
-          q.id === updatedQuestion.id ? updatedQuestion : q
-        )
-      }));
-      
-      // 로컬 스토리지 업데이트
-      localStorage.setItem("savedQuestionSets", JSON.stringify(updatedSets));
-      console.log('Updated savedQuestionSets in localStorage');
-      
-      return updatedSets;
-    });
-
-    // generationResults 상태 업데이트
     setGenerationResults(prevResults => {
-      const updatedResults = { ...prevResults };
-      Object.keys(updatedResults).forEach(historyId => {
-        const result = updatedResults[historyId];
-        if (result) {
-          result.questions = result.questions.map(q =>
+      const newResults = { ...prevResults };
+      if (selectedHistoryId && newResults[selectedHistoryId]) {
+        newResults[selectedHistoryId] = {
+          ...newResults[selectedHistoryId],
+          questions: newResults[selectedHistoryId].questions.map(q =>
             q.id === updatedQuestion.id ? updatedQuestion : q
-          );
-        }
-      });
-      
-      // 로컬 스토리지 업데이트
-      localStorage.setItem("generationResults", JSON.stringify(updatedResults));
-      console.log('Updated generationResults in localStorage');
-      
-      return updatedResults;
+          )
+        };
+      }
+      return newResults;
     });
   }
-
-  // 현재 저장된 세트 수 로깅
-  console.log("📊 현재 savedQuestionSets 상태:", savedQuestionSets)
 
   return (
     <div className="flex h-screen">
@@ -455,6 +355,7 @@ export default function HomePage() {
             onSaveToStorage={handleSaveToStorage}
             questions={selectedHistoryId ? (generationResults[selectedHistoryId]?.questions || []) : []}
             onQuestionUpdate={handleQuestionUpdate}
+            totalRequestedCount={selectedHistoryId ? (history.find((h) => h.id === selectedHistoryId)?.count || 0) : 0}
           />
         )}
         {currentView === "storage" && (

@@ -9,10 +9,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Edit, Download, Archive, CheckCircle, XCircle, GripVertical } from "lucide-react"
+import { Edit, Download, Archive, CheckCircle, XCircle, GripVertical, ArrowLeft } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import type { QuestionFormData, GenerationHistory, SavedQuestion } from "@/app/page"
-// import { generateQuestion } from "@/lib/generate-question" // REMOVED: No longer used directly
 
 interface QuestionResultsProps {
   formData: QuestionFormData | null
@@ -21,6 +20,7 @@ interface QuestionResultsProps {
   onSaveToStorage: (title: string, questions: SavedQuestion[], tags: string[]) => void
   questions: SavedQuestion[]
   onQuestionUpdate?: (updatedQuestion: SavedQuestion) => void
+  totalRequestedCount: number
 }
 
 interface GeneratedQuestion {
@@ -48,7 +48,8 @@ export default function QuestionResults({
   onBackToForm,
   onSaveToStorage,
   questions,
-  onQuestionUpdate
+  onQuestionUpdate,
+  totalRequestedCount
 }: QuestionResultsProps) {
   const { toast } = useToast()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -71,7 +72,7 @@ export default function QuestionResults({
   useEffect(() => {
     if (historyItem?.status === "generating") {
       setIsGenerating(true)
-      setGeneratedQuestions([])
+      setGeneratedQuestions(questions)
     } else if (historyItem?.status === "completed") {
       setIsGenerating(false)
       setGeneratedQuestions(questions)
@@ -88,14 +89,11 @@ export default function QuestionResults({
 
   const handleSave = () => {
     if (editedQuestion) {
-      console.log('Saving edited question:', editedQuestion);
-      
       // generatedQuestions 상태 업데이트
       setGeneratedQuestions((prev: GeneratedQuestion[]) => {
         const updated = prev.map((q: GeneratedQuestion) => 
           q.id === editedQuestion.id ? editedQuestion : q
         );
-        console.log('Updated generatedQuestions:', updated);
         return updated;
       });
 
@@ -107,20 +105,14 @@ export default function QuestionResults({
       // 로컬 스토리지 직접 업데이트
       try {
         const savedData = localStorage.getItem("savedQuestionSets");
-        console.log('Current saved data:', savedData);
         
         if (savedData) {
           const savedQuestionSets = JSON.parse(savedData);
-          console.log('Parsed saved question sets:', savedQuestionSets);
           
           const updatedSets = savedQuestionSets.map((set: any) => {
             const updatedQuestions = set.questions.map((q: any) =>
               q.id === editedQuestion.id ? editedQuestion : q
             );
-            console.log(`Updating set ${set.id}:`, {
-              before: set.questions,
-              after: updatedQuestions
-            });
             return {
               ...set,
               questions: updatedQuestions
@@ -128,17 +120,14 @@ export default function QuestionResults({
           });
 
           localStorage.setItem("savedQuestionSets", JSON.stringify(updatedSets));
-          console.log('Successfully saved to localStorage');
           
           toast({
             title: "저장 완료",
             description: "문항이 성공적으로 저장되었습니다.",
           });
         } else {
-          console.log('No saved data found in localStorage');
         }
       } catch (error) {
-        console.error('Error saving to localStorage:', error);
         toast({
           title: "저장 실패",
           description: "문항 저장 중 오류가 발생했습니다.",
@@ -225,7 +214,7 @@ export default function QuestionResults({
   const handleExport = () => {
     const exportData = {
       metadata: {
-        type: formData?.type,
+        types: formData?.types,
         difficulty: formData?.difficulty,
         grade: formData?.grade,
         totalQuestions: generatedQuestions.length,
@@ -248,8 +237,8 @@ export default function QuestionResults({
   const handleSaveToStorageClick = () => {
     if (!saveTitle.trim()) {
       toast({
-        title: "제목을 입력해주세요",
-        description: "저장할 문제 세트의 제목을 입력해주세요.",
+        title: "제목 없음",
+        description: "세트 제목을 입력해주세요.",
         variant: "destructive",
       })
       return
@@ -257,54 +246,55 @@ export default function QuestionResults({
 
     if (selectedQuestions.size === 0) {
       toast({
-        title: "문제를 선택해주세요",
-        description: "저장할 문제를 하나 이상 선택해주세요.",
+        title: "문항 선택 필요",
+        description: "저장할 문항을 1개 이상 선택해주세요.",
         variant: "destructive",
       })
       return
     }
 
-    try {
-      const selectedQuestionsList = generatedQuestions.filter((q) => selectedQuestions.has(q.id)) as SavedQuestion[]
-      const tags = saveTags
-        .split(",")
-        .map((tag: string) => tag.trim())
-        .filter((tag: string) => tag.length > 0)
+    const questionsToSave = generatedQuestions.filter((q: GeneratedQuestion) => selectedQuestions.has(q.id))
 
-      onSaveToStorage(saveTitle.trim(), selectedQuestionsList, tags)
-      
-      setIsDialogOpen(false)
-      setSaveTitle("")
-      setSaveTags("")
-      setSelectedQuestions(new Set())
+    // Remove duplicate tags and filter out empty strings
+    const tagsArray = saveTags.split(/\s*,\s*|\s+/).map(tag => tag.trim()).filter(tag => tag.length > 0);
+    const uniqueTags = Array.from(new Set(tagsArray));
 
-      toast({
-        title: "저장 완료",
-        description: `${selectedQuestionsList.length}개의 문제가 보관함에 저장되었습니다.`,
-      })
-    } catch (error) {
-      toast({
-        title: "저장 실패",
-        description: "문제를 저장하는 중 오류가 발생했습니다.",
-        variant: "destructive",
-      })
-    }
+    onSaveToStorage(saveTitle, questionsToSave as SavedQuestion[], uniqueTags)
+    setIsDialogOpen(false)
+    setSaveTitle("")
+    setSaveTags("")
+    setSelectedQuestions(new Set())
+    toast({
+      title: "저장 완료",
+      description: "선택된 문항이 보관함에 저장되었습니다.",
+    })
   }
 
   const getGradeLabel = (gradeValue: string) => {
-    const gradeOption = [
-      { value: "elementary-3", label: "초등학교 3학년" },
-      { value: "elementary-4", label: "초등학교 4학년" },
-      { value: "elementary-5", label: "초등학교 5학년" },
-      { value: "elementary-6", label: "초등학교 6학년" },
-      { value: "middle-1", label: "중학교 1학년" },
-      { value: "middle-2", label: "중학교 2학년" },
-      { value: "middle-3", label: "중학교 3학년" },
-      { value: "high-1", label: "고등학교 1학년" },
-      { value: "high-2", label: "고등학교 2학년" },
-      { value: "high-3", label: "고등학교 3학년" },
-    ].find((option) => option.value === gradeValue)
-    return gradeOption?.label || gradeValue
+    switch (gradeValue) {
+      case "elementary-3":
+        return "초등학교 3학년"
+      case "elementary-4":
+        return "초등학교 4학년"
+      case "elementary-5":
+        return "초등학교 5학년"
+      case "elementary-6":
+        return "초등학교 6학년"
+      case "middle-1":
+        return "중학교 1학년"
+      case "middle-2":
+        return "중학교 2학년"
+      case "middle-3":
+        return "중학교 3학년"
+      case "high-1":
+        return "고등학교 1학년"
+      case "high-2":
+        return "고등학교 2학년"
+      case "high-3":
+        return "고등학교 3학년"
+      default:
+        return gradeValue
+    }
   }
 
   const isAllSelected = selectedQuestions.size === generatedQuestions.length && generatedQuestions.length > 0
@@ -314,24 +304,16 @@ export default function QuestionResults({
     <div className="flex-1 flex flex-col h-full">
       <div className="flex-shrink-0 p-6 bg-white border-b border-gray-200">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">생성된 문항</h1>
-            <div className="flex items-center gap-2 mt-1">
-              {formData && <Badge variant="secondary">{getGradeLabel(formData.grade)}</Badge>}
-              {formData && <Badge variant="secondary">난이도: {formData.difficulty}</Badge>}
-              {generatedQuestions.length > 0 && <Badge variant="outline">총 {generatedQuestions.length}개</Badge>}
-              {historyItem && (
-                <Badge
-                  variant={historyItem.status === "completed" ? "default" : "secondary"}
-                  className={historyItem.status === "completed" ? "bg-green-100 text-green-800" : ""}
-                >
-                  {historyItem.status === "completed"
-                    ? "생성 완료"
-                    : historyItem.status === "generating"
-                      ? "생성 중..."
-                      : "생성 실패"}
-                </Badge>
-              )}
+          <div className="flex items-center gap-4">
+            <Button variant="outline" onClick={onBackToForm}>
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              뒤로
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">생성된 문항</h1>
+              <p className="text-sm text-gray-500">
+                {historyItem?.type} • {historyItem?.difficulty} • {getGradeLabel(historyItem?.grade || "")}
+              </p>
             </div>
           </div>
 
@@ -414,14 +396,26 @@ export default function QuestionResults({
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6 min-h-0">
         <div className="max-w-4xl mx-auto">
           {isGenerating ? (
-            <Card className="p-8 text-center">
-              <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-              <p className="text-gray-600">문항을 생성하고 있습니다... ({generatedQuestions.length}/{formData?.count || 0})</p>
-            </Card>
+            <div className="flex flex-col items-center justify-center p-8 border rounded-lg bg-gray-50 dark:bg-gray-800">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-gray-100 mb-4"></div>
+              <p className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+                문항을 생성 중입니다... ({generatedQuestions.length} / {totalRequestedCount})
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                잠시만 기다려 주세요.
+              </p>
+            </div>
           ) : historyItem?.status === "failed" ? (
-            <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 py-10">
-              <p className="text-lg font-semibold mb-2">일시적인 오류로 문항 생성에 실패했습니다.</p>
-              <p>잠시 후 다시 시도해 주세요.</p>
+            <div className="flex flex-col items-center justify-center p-8 border rounded-lg bg-red-50 bg-opacity-70 dark:bg-red-900 dark:bg-opacity-70 text-red-700 dark:text-red-200">
+              <XCircle className="h-12 w-12 mb-4" />
+              <p className="text-lg font-semibold">문항 생성에 실패했습니다.</p>
+              <p className="text-sm mt-2">문제가 발생했습니다. 잠시 후 다시 시도해 주세요.</p>
+            </div>
+          ) : historyItem?.status === "completed" && generatedQuestions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center p-8 border rounded-lg bg-yellow-50 bg-opacity-70 dark:bg-yellow-900 dark:bg-opacity-70 text-yellow-700 dark:text-yellow-200">
+              <XCircle className="h-12 w-12 mb-4" />
+              <p className="text-lg font-semibold">생성된 문항이 없습니다.</p>
+              <p className="text-sm mt-2">조건에 맞는 문항을 생성하지 못했습니다.</p>
             </div>
           ) : generatedQuestions.length > 0 ? (
             <div className="space-y-6">
