@@ -248,11 +248,8 @@ export default function QuestionResults({
 
     const questionsToSave = generatedQuestions.filter((q: GeneratedQuestion) => selectedQuestions.has(q.id))
 
-    // Remove duplicate tags and filter out empty strings
-    const tagsArray = saveTags.split(/\s*,\s*|\s+/).map(tag => tag.trim()).filter(tag => tag.length > 0);
-    const uniqueTags = Array.from(new Set(tagsArray));
-
-    onSaveToStorage(saveTitle, questionsToSave as SavedQuestion[], uniqueTags)
+    onSaveToStorage(saveTitle, questionsToSave, saveTags.split(",").map(tag => tag.trim()).filter(tag => tag !== ""))
+    console.log("handleSaveToStorageClick: Attempting to close dialog by setting isDialogOpen to false.")
     setIsDialogOpen(false)
     setSaveTitle("")
     setSaveTags("")
@@ -311,7 +308,7 @@ export default function QuestionResults({
               <Download className="w-4 h-4 mr-2" />
               내보내기
             </Button>
-            <Dialog>
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button
                   variant="outline"
