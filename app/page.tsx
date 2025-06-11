@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/sidebar"
 import { QuestionGeneratorForm } from "@/components/question-generator-form"
 import QuestionResults from "@/components/question-results"
 import { Storage } from "@/components/storage"
-import { generateQuestion } from '@/lib/openai'
+// import { generateQuestion } from '@/lib/openai' // REMOVED: Direct OpenAI call
 import { QuestionSet } from '@/types/question'
 import { toast } from "@/components/ui/use-toast"
 
@@ -223,12 +223,26 @@ export default function HomePage() {
       // 각 문항을 개별적으로 생성하는 Promise 배열 생성
       const questionPromises = Array(formData.count).fill(null).map(async (_, index) => {
         try {
-          const question = await generateQuestion({
-            type: formData.type,
-            difficulty: formData.difficulty,
-            grade: formData.grade,
-            count: 1
-          })
+          // Call the API Route instead of direct OpenAI function
+          const response = await fetch('/api/generate-question', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              type: formData.type,
+              difficulty: formData.difficulty,
+              grade: formData.grade,
+              count: 1 // Request one question per API call
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to fetch question from API Route');
+          }
+
+          const question = await response.json();
           return {
             ...question[0],
             id: `generated-q${Date.now()}-${index}`,
@@ -248,45 +262,53 @@ export default function HomePage() {
       // 성공적으로 생성된 문항만 필터링
       const successfulQuestions = results
         .filter((result): result is PromiseFulfilledResult<any> => 
-          result.status === 'fulfilled' && result.value !== null
+          result.status === "fulfilled" && result.value !== null
         )
-        .map(result => result.value)
+        .map((result) => result.value)
 
-      // 생성된 결과 저장
-      setGenerationResults((prev) => ({
+      setGenerationResults(prev => ({
         ...prev,
-        [newHistory.id]: {
-          questions: successfulQuestions,
-        },
+        [newHistory.id]: { questions: successfulQuestions }
       }))
 
-      // 히스토리 상태 업데이트
-      setHistory((prev) =>
-        prev.map((item) =>
-          item.id === newHistory.id ? { 
-            ...item, 
-            status: successfulQuestions.length > 0 ? "completed" : "failed" 
-          } : item
+      setHistory(prev => 
+        prev.map(item => 
+          item.id === newHistory.id 
+            ? { ...item, status: successfulQuestions.length > 0 ? "completed" : "failed" } 
+            : item
         )
       )
 
       if (successfulQuestions.length === 0) {
         toast({
-          title: "생성 실패",
-          description: "문제 생성 중 오류가 발생했습니다.",
+          title: "문항 생성 실패",
+          description: "모든 문항 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.",
           variant: "destructive",
-        })
+        });
+      } else if (successfulQuestions.length < formData.count) {
+        toast({
+          title: "일부 문항 생성 실패",
+          description: `${formData.count}개 중 ${successfulQuestions.length}개의 문항만 생성되었습니다.`, 
+          variant: "default",
+        });
+      } else {
+        toast({
+          title: "문항 생성 완료",
+          description: `${successfulQuestions.length}개의 문항이 성공적으로 생성되었습니다.`, 
+        });
       }
     } catch (error) {
-      console.error("Error generating questions:", error)
-      setHistory((prev) =>
-        prev.map((item) =>
-          item.id === newHistory.id ? { ...item, status: "failed" } : item
+      console.error("Error in handleGenerate:", error)
+      setHistory(prev => 
+        prev.map(item => 
+          item.id === newHistory.id 
+            ? { ...item, status: "failed" } 
+            : item
         )
       )
       toast({
-        title: "오류 발생",
-        description: "문제 생성 중 오류가 발생했습니다.",
+        title: "문항 생성 오류",
+        description: "문항 생성 중 알 수 없는 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         variant: "destructive",
       })
     }

@@ -1,8 +1,9 @@
+import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true
+  // dangerouslyAllowBrowser: true // This is removed to prevent exposing the API key on the browser
 });
 
 interface QuestionGenerationParams {
@@ -12,8 +13,11 @@ interface QuestionGenerationParams {
   count: number;
 }
 
-export async function generateQuestion({ type, difficulty, grade, count = 1 }: QuestionGenerationParams) {
-  const prompt = `
+export async function POST(request: Request) {
+  try {
+    const { type, difficulty, grade, count } = await request.json() as QuestionGenerationParams;
+
+    const prompt = `
 다음 조건에 맞는 영어 독해 문제 ${count}개를 생성해주세요:
 
 문제 유형: ${type}
@@ -41,7 +45,6 @@ export async function generateQuestion({ type, difficulty, grade, count = 1 }: Q
 4. 각 문제는 독립적이고 완성된 형태여야 합니다.
 `;
 
-  try {
     const completion = await openai.chat.completions.create({
       messages: [
         {
@@ -58,9 +61,9 @@ export async function generateQuestion({ type, difficulty, grade, count = 1 }: Q
     });
 
     const response = JSON.parse(completion.choices[0].message.content || "{}");
-    return response.questions || [];
+    return NextResponse.json(response.questions || []);
   } catch (error) {
-    console.error("Error generating questions:", error);
-    throw error;
+    console.error("Error generating questions in API route:", error);
+    return NextResponse.json({ error: "Failed to generate questions" }, { status: 500 });
   }
 } 
