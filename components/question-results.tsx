@@ -252,16 +252,6 @@ export default function QuestionResults({
     return gradeOption?.label || gradeValue
   }
 
-  if (!formData || !historyItem) {
-    return (
-      <div className="flex-1 p-8 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-500 mb-4">문항 데이터를 불러올 수 없습니다.</p>
-        </div>
-      </div>
-    )
-  }
-
   const isAllSelected = selectedQuestions.size === generatedQuestions.length && generatedQuestions.length > 0
   const isPartiallySelected = selectedQuestions.size > 0 && selectedQuestions.size < generatedQuestions.length
 
@@ -272,24 +262,26 @@ export default function QuestionResults({
           <div>
             <h1 className="text-2xl font-bold text-gray-900">생성된 문항</h1>
             <div className="flex items-center gap-2 mt-1">
-              <Badge variant="secondary">{getGradeLabel(formData.grade)}</Badge>
-              <Badge variant="secondary">난이도: {formData.difficulty}</Badge>
-              <Badge variant="outline">총 {generatedQuestions.length}개</Badge>
-              <Badge
-                variant={historyItem.status === "completed" ? "default" : "secondary"}
-                className={historyItem.status === "completed" ? "bg-green-100 text-green-800" : ""}
-              >
-                {historyItem.status === "completed"
-                  ? "생성 완료"
-                  : historyItem.status === "generating"
-                    ? "생성 중..."
-                    : "생성 실패"}
-              </Badge>
+              {formData && <Badge variant="secondary">{getGradeLabel(formData.grade)}</Badge>}
+              {formData && <Badge variant="secondary">난이도: {formData.difficulty}</Badge>}
+              {generatedQuestions.length > 0 && <Badge variant="outline">총 {generatedQuestions.length}개</Badge>}
+              {historyItem && (
+                <Badge
+                  variant={historyItem.status === "completed" ? "default" : "secondary"}
+                  className={historyItem.status === "completed" ? "bg-green-100 text-green-800" : ""}
+                >
+                  {historyItem.status === "completed"
+                    ? "생성 완료"
+                    : historyItem.status === "generating"
+                      ? "생성 중..."
+                      : "생성 실패"}
+                </Badge>
+              )}
             </div>
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={handleExport} disabled={isGenerating}>
+            <Button variant="outline" onClick={handleExport} disabled={isGenerating || !formData || !historyItem}>
               <Download className="w-4 h-4 mr-2" />
               내보내기
             </Button>
@@ -297,7 +289,7 @@ export default function QuestionResults({
               <DialogTrigger asChild>
                 <Button
                   variant="outline"
-                  disabled={selectedQuestions.size === 0 || isGenerating}
+                  disabled={selectedQuestions.size === 0 || isGenerating || !formData || !historyItem}
                 >
                   <Archive className="w-4 h-4 mr-2" />
                   보관함에 저장 ({selectedQuestions.size})
@@ -371,10 +363,10 @@ export default function QuestionResults({
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
               <p className="text-gray-600">문항을 생성하고 있습니다... ({generatedQuestions.length}/{formData?.count || 0})</p>
             </Card>
-          ) : showRegenerationMessage ? (
+          ) : (!formData || !historyItem) ? (
             <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 py-10">
-              <p className="text-lg font-semibold mb-2">문항 데이터에 접근할 수 없습니다.</p>
-              <p>새로운 문항 생성이 필요합니다.</p>
+              <p className="text-lg font-semibold mb-2">일시적인 오류로 문항 생성에 실패했습니다.</p>
+              <p>잠시 후 다시 시도해 주세요.</p>
             </div>
           ) : generatedQuestions.length > 0 ? (
             <div className="space-y-6">
@@ -559,7 +551,8 @@ export default function QuestionResults({
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 py-10">
-              <p className="text-lg font-semibold mb-2">문항 생성을 시작해주세요.</p>
+              <p className="text-lg font-semibold mb-2">일시적인 오류로 문항 생성에 실패했습니다.</p>
+              <p>잠시 후 다시 시도해 주세요.</p>
             </div>
           )}
         </div>
