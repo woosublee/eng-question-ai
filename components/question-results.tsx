@@ -14,6 +14,33 @@ import { Edit, Download, Archive, CheckCircle, XCircle, GripVertical, ArrowLeft,
 import { useToast } from "@/hooks/use-toast"
 import type { QuestionFormData, GenerationHistory, SavedQuestion } from "@/app/page"
 
+const EXPORT_FIELDS = [
+  { key: "id", label: "문항 ID" },
+  { key: "type", label: "유형" },
+  { key: "grade", label: "학년" },
+  { key: "difficulty", label: "난이도" },
+  { key: "questionStatement", label: "발문" },
+  { key: "passage", label: "지문" },
+  { key: "options", label: "선택지" },
+  { key: "correctAnswer", label: "정답" },
+  { key: "explanation", label: "해설" },
+  { key: "memo", label: "메모" },
+];
+
+type QuestionFieldsState = {
+  [key: string]: boolean;
+  id: boolean;
+  type: boolean;
+  passage: boolean;
+  questionStatement: boolean;
+  options: boolean;
+  correctAnswer: boolean;
+  explanation: boolean;
+  difficulty: boolean;
+  grade: boolean;
+  memo: boolean;
+};
+
 interface QuestionResultsProps {
   formData: QuestionFormData | null
   historyItem: GenerationHistory | undefined
@@ -64,6 +91,11 @@ export default function QuestionResults({
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestion[]>([])
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [exportFormat, setExportFormat] = useState("json")
+  const [questionFields, setQuestionFields] = useState<QuestionFieldsState>(
+    EXPORT_FIELDS.reduce((acc, field) => ({ ...acc, [field.key]: true }), {} as QuestionFieldsState)
+  )
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
 
   useEffect(() => {
     if (scrollContainerRef.current) {
@@ -205,26 +237,108 @@ export default function QuestionResults({
   }
 
   const handleExport = () => {
-    const exportData = {
-      metadata: {
-        types: formData?.types,
-        difficulty: formData?.difficulty,
-        grade: formData?.grade,
-        totalQuestions: generatedQuestions.length,
-        generatedAt: historyItem?.timestamp,
-      },
-      questions: generatedQuestions,
+    const questionsToExport = generatedQuestions.filter((q: GeneratedQuestion) =>
+      selectedQuestions.has(q.id)
+    )
+
+    const filteredQuestions = questionsToExport.map((q: GeneratedQuestion) => {
+      const newQ: Partial<GeneratedQuestion> = {};
+      if (questionFields.id) newQ.id = q.id;
+      if (questionFields.type) newQ.type = q.type;
+      if (questionFields.passage) newQ.passage = q.passage;
+      if (questionFields.questionStatement) newQ.questionStatement = q.questionStatement;
+      if (questionFields.options) newQ.options = q.options;
+      if (questionFields.correctAnswer) newQ.correctAnswer = q.correctAnswer;
+      if (questionFields.explanation) newQ.explanation = q.explanation;
+      if (questionFields.difficulty) newQ.difficulty = q.difficulty;
+      if (questionFields.grade) newQ.grade = q.grade;
+      if (questionFields.memo) newQ.memo = q.memo;
+      return newQ;
+    });
+
+    let fileContent = "";
+    let fileName = `exported-questions-${new Date().toISOString().split("T")[0]}`;
+    let mimeType = "";
+
+    if (exportFormat === "json") {
+      fileContent = JSON.stringify(filteredQuestions, null, 2);
+      fileName += ".json";
+      mimeType = "application/json";
+    } else if (exportFormat === "csv") {
+      if (filteredQuestions.length === 0) {
+        fileContent = "";
+      } else {
+        let headers: string[] = [];
+        EXPORT_FIELDS.forEach(field => {
+          if (questionFields[field.key]) {
+            if (field.key === "options") {
+              const maxOptions = filteredQuestions.reduce((max, q) => Math.max(max, q.options?.length || 0), 0);
+              for (let i = 0; i < maxOptions; i++) {
+                headers.push(`선택지 ${i + 1}`);
+              }
+            } else {
+              headers.push(field.label);
+            }
+          }
+        });
+
+        const csvRows = [headers.join(",")];
+        filteredQuestions.forEach(q => {
+          const row: string[] = [];
+          EXPORT_FIELDS.forEach(field => {
+            if (questionFields[field.key]) {
+              if (field.key === "options") {
+                const maxOptions = filteredQuestions.reduce((max, currentQ) => Math.max(max, currentQ.options?.length || 0), 0);
+                for (let i = 0; i < maxOptions; i++) {
+                  let optionValue = q.options?.[i] || '';
+                  if (typeof optionValue === 'string') {
+                    optionValue = `"${optionValue.replace(/"/g, '""')}"`;
+                  }
+                  row.push(optionValue);
+                }
+              } else {
+                let value = (q as any)[field.key];
+                if (typeof value === 'string') {
+                  value = `"${value.replace(/"/g, '""')}"`;
+                } else if (value === null || value === undefined) {
+                  value = '';
+                }
+                row.push(value);
+              }
+            }
+          });
+          csvRows.push(row.join(","));
+        });
+        fileContent = csvRows.join("\n");
+        fileName += ".csv";
+        mimeType = "text/csv";
+      }
     }
 
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `english-questions-${new Date().toISOString().split("T")[0]}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    if (fileContent) {
+      const blob = new Blob([fileContent], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "내보내기 완료",
+        description: `${questionsToExport.length}개 문항이 성공적으로 내보내졌습니다.`, 
+      });
+    } else {
+      toast({
+        title: "내보내기 실패",
+        description: "내보낼 데이터가 없습니다.",
+        variant: "destructive",
+      });
+    }
+
+    setIsExportDialogOpen(false);
   }
 
   const handleSaveToStorageClick = () => {
@@ -304,10 +418,59 @@ export default function QuestionResults({
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={handleExport} disabled={isLoading || !formData || !historyItem}>
-              <Download className="w-4 h-4 mr-2" />
-              내보내기
-            </Button>
+            <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" disabled={selectedQuestions.size === 0 || isLoading || !formData || !historyItem}>
+                  <Download className="w-4 h-4 mr-2" />
+                  내보내기 ({selectedQuestions.size})
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>문항 내보내기</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">내보내기 형식</label>
+                    <div className="flex gap-4">
+                      <div className="flex items-center space-x-2">
+                        <input type="radio" id="json-format" name="export-format" value="json" checked={exportFormat === "json"} onChange={() => setExportFormat("json")} />
+                        <Label htmlFor="json-format">JSON</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <input type="radio" id="csv-format" name="export-format" value="csv" checked={exportFormat === "csv"} onChange={() => setExportFormat("csv")} />
+                        <Label htmlFor="csv-format">CSV</Label>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">내보낼 문항 데이터</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {EXPORT_FIELDS.map(field => (
+                        <div key={field.key} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={field.key}
+                            checked={questionFields[field.key as keyof typeof questionFields]}
+                            onCheckedChange={(checked: boolean) =>
+                              setQuestionFields(prev => ({ ...prev, [field.key]: checked }))
+                            }
+                          />
+                          <Label htmlFor={field.key}>{field.label}</Label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsExportDialogOpen(false)}>
+                    취소
+                  </Button>
+                  <Button onClick={handleExport} disabled={selectedQuestions.size === 0}>
+                    확인
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button
