@@ -6,16 +6,45 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { Search, Trash2, Eye, Download, Calendar, BookOpen, Tag, Edit } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import type { SavedQuestionSet } from "@/app/page"
+import type { SavedQuestionSet, SavedQuestion } from "@/app/page"
 import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
 
 interface StorageProps {
   questionSets: SavedQuestionSet[]
   onDelete: (setId: string) => void
   onUpdate: (setId: string, updatedSet: SavedQuestionSet) => void
+}
+
+const EXPORT_FIELDS = [
+  { key: "id", label: "문항 ID" },
+  { key: "type", label: "유형" },
+  { key: "grade", label: "학년" },
+  { key: "difficulty", label: "난이도" },
+  { key: "questionStatement", label: "발문" },
+  { key: "passage", label: "지문" },
+  { key: "options", label: "선택지" },
+  { key: "correctAnswer", label: "정답" },
+  { key: "explanation", label: "해설" },
+  { key: "memo", label: "메모" },
+]
+
+type QuestionFieldsState = {
+  [key: string]: boolean
+  id: boolean
+  type: boolean
+  passage: boolean
+  questionStatement: boolean
+  options: boolean
+  correctAnswer: boolean
+  explanation: boolean
+  difficulty: boolean
+  grade: boolean
+  memo: boolean
 }
 
 export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
@@ -31,6 +60,11 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
   const [editedSet, setEditedSet] = useState<SavedQuestionSet | null>(null)
   const [tagInputValue, setTagInputValue] = useState<string>('')
   const [isComposing, setIsComposing] = useState(false)
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
+  const [exportFormat, setExportFormat] = useState("json")
+  const [questionFields, setQuestionFields] = useState<QuestionFieldsState>(
+    EXPORT_FIELDS.reduce((acc, field) => ({ ...acc, [field.key]: true }), {} as QuestionFieldsState)
+  )
 
   const getGradeLabel = (gradeValue: string) => {
     const gradeLabels: Record<string, string> = {
@@ -173,29 +207,116 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
     }));
   };
 
-  const handleExportSet = (set: SavedQuestionSet) => {
-    const exportData = {
-      metadata: {
-        title: set.title,
-        difficulty: set.questions[0]?.difficulty,
-        grade: set.questions[0]?.grade,
-        savedAt: set.savedAt,
-        totalQuestions: set.questions.length,
-        tags: set.tags,
-      },
-      questions: set.questions,
+  const handleExportSet = (set: SavedQuestionSet | null) => {
+    if (!set) {
+      toast({
+        title: "내보내기 실패",
+        description: "선택된 문제 세트가 없습니다.",
+        variant: "destructive",
+      });
+      setIsExportDialogOpen(false);
+      return;
     }
 
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `${set.title}-${new Date().toISOString().split("T")[0]}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }
+    const questionsToExport = set.questions;
+
+    const filteredQuestions = questionsToExport.map((q: SavedQuestion) => {
+      const newQ: Partial<SavedQuestion> = {};
+      EXPORT_FIELDS.forEach(field => {
+        if (questionFields[field.key]) {
+          if (field.key === "options") {
+            newQ.options = q.options;
+          } else {
+            (newQ as any)[field.key] = (q as any)[field.key];
+          }
+        }
+      });
+      return newQ;
+    });
+
+    let fileContent = "";
+    let fileName = `${set.title}-exported-${new Date().toISOString().split("T")[0]}`;
+    let mimeType = "";
+
+    if (exportFormat === "json") {
+      fileContent = JSON.stringify(filteredQuestions, null, 2);
+      fileName += ".json";
+      mimeType = "application/json";
+    } else if (exportFormat === "csv") {
+      if (filteredQuestions.length === 0) {
+        fileContent = "";
+      } else {
+        let headers: string[] = [];
+        EXPORT_FIELDS.forEach(field => {
+          if (questionFields[field.key]) {
+            if (field.key === "options") {
+              const maxOptions = questionsToExport.reduce((max, q) => Math.max(max, q.options?.length || 0), 0);
+              for (let i = 0; i < maxOptions; i++) {
+                headers.push(`선택지 ${i + 1}`);
+              }
+            } else {
+              headers.push(field.label);
+            }
+          }
+        });
+
+        const csvRows = [headers.join(",")];
+        filteredQuestions.forEach(q => {
+          const row: string[] = [];
+          EXPORT_FIELDS.forEach(field => {
+            if (questionFields[field.key]) {
+              if (field.key === "options") {
+                const maxOptions = questionsToExport.reduce((max, currentQ) => Math.max(max, currentQ.options?.length || 0), 0);
+                for (let i = 0; i < maxOptions; i++) {
+                  let optionValue = q.options?.[i] || '';
+                  if (typeof optionValue === 'string') {
+                    optionValue = `"${optionValue.replace(/"/g, '""')}"`;
+                  }
+                  row.push(optionValue);
+                }
+              } else {
+                let value = (q as any)[field.key];
+                if (typeof value === 'string') {
+                  value = `"${value.replace(/"/g, '""')}"`;
+                } else if (value === null || value === undefined) {
+                  value = '';
+                }
+                row.push(value);
+              }
+            }
+          });
+          csvRows.push(row.join(","));
+        });
+        fileContent = csvRows.join("\n");
+        fileName += ".csv";
+        mimeType = "text/csv";
+      }
+    }
+
+    if (fileContent) {
+      const blob = new Blob([fileContent], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "내보내기 완료",
+        description: `${questionsToExport.length}개 문항이 성공적으로 내보내졌습니다.`, 
+      });
+    } else {
+      toast({
+        title: "내보내기 실패",
+        description: "내보낼 데이터가 없습니다.",
+        variant: "destructive",
+      });
+    }
+    setIsExportDialogOpen(false);
+  };
 
   return (
     <div className="flex-1 flex flex-col overflow-y-auto">
@@ -269,7 +390,7 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredSets.map((set) => (
-                <Card key={set.id} className="p-6 hover:shadow-lg transition-shadow">
+                <Card key={set.id} className="p-6 flex flex-col justify-between">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
                       <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2">{set.title}</h3>
@@ -316,13 +437,64 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
                   </div>
 
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleViewDetails(set)} className="flex-1">
-                      <Eye className="w-4 h-4 mr-1" />
+                    <Button variant="outline" size="sm" onClick={() => handleViewDetails(set)}>
+                      <Eye className="w-4 h-4" />
                       보기
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleExportSet(set)}>
-                      <Download className="w-4 h-4" />
-                    </Button>
+                    
+                    <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <Download className="w-4 h-4" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>문항 내보내기</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">내보내기 형식</label>
+                            <div className="flex gap-4">
+                              <div className="flex items-center space-x-2">
+                                <input type="radio" id="json-format" name="export-format" value="json" checked={exportFormat === "json"} onChange={() => setExportFormat("json")} />
+                                <Label htmlFor="json-format">JSON</Label>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <input type="radio" id="csv-format" name="export-format" value="csv" checked={exportFormat === "csv"} onChange={() => setExportFormat("csv")} />
+                                <Label htmlFor="csv-format">CSV</Label>
+                              </div>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">내보낼 문항 데이터</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              {EXPORT_FIELDS.map(field => (
+                                <div key={field.key} className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={field.key}
+                                    checked={questionFields[field.key as keyof typeof questionFields]}
+                                    onCheckedChange={(checked: boolean) =>
+                                      setQuestionFields(prev => ({ ...prev, [field.key]: checked }))
+                                    }
+                                  />
+                                  <Label htmlFor={field.key}>{field.label}</Label>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button variant="outline" onClick={() => setIsExportDialogOpen(false)}>
+                            취소
+                          </Button>
+                          <Button onClick={() => handleExportSet(set)}>
+                            확인
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+
                     <Button
                       variant="outline"
                       size="sm"
