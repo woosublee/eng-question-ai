@@ -82,6 +82,9 @@ export interface SavedQuestion {
   correctAnswer: number
   explanation: string
   memo?: string
+  parentSetTitle?: string;
+  parentSetSavedAt?: Date;
+  parentSetTags?: string[];
 }
 
 export interface SavedQuestionSet {

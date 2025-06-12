@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
-import { Search, Trash2, Eye, Download, Calendar, BookOpen, Tag, Edit } from "lucide-react"
+import { Search, Trash2, Eye, Download, Calendar, BookOpen, Tag, Edit, ListFilter } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import type { SavedQuestionSet, SavedQuestion } from "@/app/page"
 import { Textarea } from "@/components/ui/textarea"
@@ -65,6 +65,7 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
   const [questionFields, setQuestionFields] = useState<QuestionFieldsState>(
     EXPORT_FIELDS.reduce((acc, field) => ({ ...acc, [field.key]: true }), {} as QuestionFieldsState)
   )
+  const [currentView, setCurrentView] = useState<"set" | "question">("set")
 
   const getGradeLabel = (gradeValue: string) => {
     const gradeLabels: Record<string, string> = {
@@ -91,6 +92,32 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
 
     return matchesSearch && matchesGrade && matchesDifficulty
   })
+
+  // 모든 문항을 단일 배열로 평탄화
+  const allQuestions: SavedQuestion[] = questionSets.flatMap(set => 
+    set.questions.map(q => ({ 
+      ...q, 
+      // 문항 단위 뷰에서 내보내기 시 필요한 메타데이터 추가
+      parentSetTitle: set.title,
+      parentSetSavedAt: set.savedAt,
+      parentSetTags: set.tags
+    }))
+  );
+
+  const filteredQuestions = allQuestions.filter(question => {
+    const matchesSearch = 
+      question.questionStatement.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      question.passage.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      question.options.some(option => option.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      question.explanation.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      question.parentSetTitle?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      question.parentSetTags?.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    const matchesGrade = filterGrade === "all" || question.grade === filterGrade;
+    const matchesDifficulty = filterDifficulty === "all" || question.difficulty === filterDifficulty;
+
+    return matchesSearch && matchesGrade && matchesDifficulty;
+  });
 
   const handleViewDetails = (set: SavedQuestionSet) => {
     setSelectedSet(set)
@@ -322,11 +349,31 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
     <div className="flex-1 flex flex-col overflow-y-auto">
       {/* 상단 헤더 영역 - 고정 */}
       <div className="flex-shrink-0 p-6 bg-white border-b border-gray-200">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-4">
           <h1 className="text-2xl font-bold text-gray-900">보관함</h1>
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <BookOpen className="w-4 h-4" />총 {questionSets.length}개 세트 •{" "}
-            {questionSets.reduce((sum, set) => sum + set.questions.length, 0)}개 문항
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <BookOpen className="w-4 h-4" />총 {questionSets.length}개 세트 •{" "}
+              {questionSets.reduce((sum, set) => sum + set.questions.length, 0)}개 문항
+            </div>
+            <div className="flex rounded-md shadow-sm">
+              <Button
+                variant={currentView === "set" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setCurrentView("set")}
+                className="rounded-r-none"
+              >
+                세트별 보기
+              </Button>
+              <Button
+                variant={currentView === "question" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setCurrentView("question")}
+                className="rounded-l-none border-l-0"
+              >
+                문항별 보기
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -376,136 +423,225 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
       {/* 스크롤 가능한 콘텐츠 영역 */}
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-6xl mx-auto">
-          {filteredSets.length === 0 ? (
-            <div className="text-center py-12">
-              <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 mb-2">
-                {questionSets.length === 0 ? "아직 저장된 문항이 없습니다." : "검색 결과가 없습니다."}
-              </p>
-              {questionSets.length === 0 && (
-                <p className="text-sm text-gray-400">문항을 생성하고 보관함에 저장해보세요.</p>
-              )}
-              <p className="text-xs text-gray-400 mt-2">전체 저장된 세트 수: {questionSets.length}</p>
-            </div>
-          ) : (
+          {currentView === "set" && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredSets.map((set) => (
-                <Card key={set.id} className="p-6 flex flex-col justify-between">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2">{set.title}</h3>
-                      <div className="flex items-center gap-2 mb-3">
-                        <Badge variant="secondary" className="text-xs">
-                          {set.questions[0]?.type}
-                        </Badge>
-                        <Badge variant="outline" className="text-xs">
-                          {getGradeLabel(set.questions[0]?.grade)}
-                        </Badge>
-                        <Badge variant="outline" className="text-xs">
-                          난이도: {set.questions[0]?.difficulty}
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 mb-4">
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <BookOpen className="w-4 h-4" />
-                      <span>{set.questions.length}개 문항</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Calendar className="w-4 h-4" />
-                      <span>{new Date(set.savedAt).toLocaleDateString()}</span>
-                    </div>
-                    {set.tags.length > 0 && (
-                      <div className="flex items-center gap-2">
-                        <Tag className="w-4 h-4 text-gray-400" />
-                        <div className="flex flex-wrap gap-1">
-                          {set.tags.slice(0, 3).map((tag, index) => (
-                            <Badge key={index} variant="outline" className="text-xs">
-                              {tag}
-                            </Badge>
-                          ))}
-                          {set.tags.length > 3 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{set.tags.length - 3}
-                            </Badge>
-                          )}
+              {filteredSets.length === 0 ? (
+                <div className="text-center py-12 col-span-full">
+                  <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500 mb-2">
+                    {questionSets.length === 0 ? "아직 저장된 문항이 없습니다." : "검색 결과가 없습니다."}
+                  </p>
+                  {questionSets.length === 0 && (
+                    <p className="text-sm text-gray-400">문항을 생성하고 보관함에 저장해보세요.</p>
+                  )}
+                  <p className="text-xs text-gray-400 mt-2">전체 저장된 세트 수: {questionSets.length}</p>
+                </div>
+              ) : (
+                filteredSets.map((set) => (
+                  <Card key={set.id} className="p-6 flex flex-col justify-between">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <h2 className="text-lg font-semibold text-gray-900 mb-2 truncate">{set.title}</h2>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge variant="secondary" className="text-xs">
+                            {set.questions[0]?.type}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {getGradeLabel(set.questions[0]?.grade)}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            난이도: {set.questions[0]?.difficulty}
+                          </Badge>
                         </div>
                       </div>
-                    )}
-                  </div>
+                    </div>
 
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleViewDetails(set)}>
-                      <Eye className="w-4 h-4" />
-                      보기
-                    </Button>
-                    
-                    <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
-                      <DialogTrigger asChild>
-                        <Button variant="outline" size="sm">
-                          <Download className="w-4 h-4" />
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>문항 내보내기</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">내보내기 형식</label>
-                            <div className="flex gap-4">
-                              <div className="flex items-center space-x-2">
-                                <input type="radio" id="json-format" name="export-format" value="json" checked={exportFormat === "json"} onChange={() => setExportFormat("json")} />
-                                <Label htmlFor="json-format">JSON</Label>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <input type="radio" id="csv-format" name="export-format" value="csv" checked={exportFormat === "csv"} onChange={() => setExportFormat("csv")} />
-                                <Label htmlFor="csv-format">CSV</Label>
-                              </div>
-                            </div>
+                    <div className="space-y-3 mb-4">
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <BookOpen className="w-4 h-4" />
+                        <span>{set.questions.length}개 문항</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <Calendar className="w-4 h-4" />
+                        <span>{new Date(set.savedAt).toLocaleDateString()}</span>
+                      </div>
+                      {set.tags.length > 0 && (
+                        <div className="flex items-center gap-2">
+                          <Tag className="w-4 h-4 text-gray-400" />
+                          <div className="flex flex-wrap gap-1">
+                            {set.tags.slice(0, 3).map((tag, index) => (
+                              <Badge key={index} variant="outline" className="text-xs">
+                                {tag}
+                              </Badge>
+                            ))}
+                            {set.tags.length > 3 && (
+                              <Badge variant="outline" className="text-xs">
+                                +{set.tags.length - 3}
+                              </Badge>
+                            )}
                           </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">내보낼 문항 데이터</label>
-                            <div className="grid grid-cols-2 gap-2">
-                              {EXPORT_FIELDS.map(field => (
-                                <div key={field.key} className="flex items-center space-x-2">
-                                  <Checkbox
-                                    id={field.key}
-                                    checked={questionFields[field.key as keyof typeof questionFields]}
-                                    onCheckedChange={(checked: boolean) =>
-                                      setQuestionFields(prev => ({ ...prev, [field.key]: checked }))
-                                    }
-                                  />
-                                  <Label htmlFor={field.key}>{field.label}</Label>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleViewDetails(set)}>
+                        <Eye className="w-4 h-4" />
+                        보기
+                      </Button>
+                      
+                      <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" size="sm">
+                            <Download className="w-4 h-4" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>문항 내보내기</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">내보내기 형식</label>
+                              <div className="flex gap-4">
+                                <div className="flex items-center space-x-2">
+                                  <input type="radio" id="json-format" name="export-format" value="json" checked={exportFormat === "json"} onChange={() => setExportFormat("json")} />
+                                  <Label htmlFor="json-format">JSON</Label>
                                 </div>
-                              ))}
+                                <div className="flex items-center space-x-2">
+                                  <input type="radio" id="csv-format" name="export-format" value="csv" checked={exportFormat === "csv"} onChange={() => setExportFormat("csv")} />
+                                  <Label htmlFor="csv-format">CSV</Label>
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">내보낼 문항 데이터</label>
+                              <div className="grid grid-cols-2 gap-2">
+                                {EXPORT_FIELDS.map(field => (
+                                  <div key={field.key} className="flex items-center space-x-2">
+                                    <Checkbox
+                                      id={field.key}
+                                      checked={questionFields[field.key as keyof typeof questionFields]}
+                                      onCheckedChange={(checked: boolean) =>
+                                        setQuestionFields(prev => ({ ...prev, [field.key]: checked }))
+                                      }
+                                    />
+                                    <Label htmlFor={field.key}>{field.label}</Label>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        <DialogFooter>
-                          <Button variant="outline" onClick={() => setIsExportDialogOpen(false)}>
-                            취소
-                          </Button>
-                          <Button onClick={() => handleExportSet(set)}>
-                            확인
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setIsExportDialogOpen(false)}>
+                              취소
+                            </Button>
+                            <Button onClick={() => handleExportSet(set)}>
+                              확인
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
 
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onDelete(set.id)}
-                      className="text-red-600 hover:text-red-700"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </Card>
-              ))}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onDelete(set.id)}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </Card>
+                ))
+              )}
+            </div>
+          )}
+
+          {currentView === "question" && (
+            <div className="space-y-6">
+              {filteredQuestions.length === 0 ? (
+                <div className="text-center py-12">
+                  <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500 mb-2">
+                    {allQuestions.length === 0 ? "아직 저장된 문항이 없습니다." : "검색 결과가 없습니다."}
+                  </p>
+                  {allQuestions.length === 0 && (
+                    <p className="text-sm text-gray-400">문항을 생성하고 보관함에 저장해보세요.</p>
+                  )}
+                </div>
+              ) : (
+                filteredQuestions.map((question, index) => (
+                  <Card key={question.id} className="p-6">
+                    <div className="space-y-4">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-500">문제 {index + 1}</span>
+                          <Badge variant="secondary" className="text-xs">
+                            {question.type}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {getGradeLabel(question.grade)}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            난이도: {question.difficulty}
+                          </Badge>
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          세트: {question.parentSetTitle} ({new Date(question.parentSetSavedAt || '').toLocaleDateString()})
+                        </div>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-700 mb-3">발문</h3>
+                        <p className="font-medium text-gray-900 bg-blue-50 p-3 rounded-lg break-words">
+                          {question.questionStatement}
+                        </p>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-700 mb-3">지문</h3>
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{question.passage}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-700 mb-3">선택지</h3>
+                        <div className="space-y-2">
+                          {question.options.map((option, optIndex) => (
+                            <div
+                              key={optIndex}
+                              className={`flex items-start gap-2 p-3 rounded-lg border ${
+                                optIndex === question.correctAnswer
+                                  ? "bg-green-50 border-green-200"
+                                  : "bg-gray-50 border-gray-200"
+                              }`}
+                            >
+                              <span className="text-sm font-medium text-gray-600 mt-0.5 flex-shrink-0">
+                                {optIndex + 1}.
+                              </span>
+                              <span className="text-sm flex-1 break-words">{option}</span>
+                              {optIndex === question.correctAnswer && (
+                                <Badge variant="default" className="bg-green-600 flex-shrink-0">
+                                  정답
+                                </Badge>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="bg-blue-50 p-4 rounded-lg">
+                        <h3 className="text-sm font-medium text-blue-800 mb-2">해설</h3>
+                        <p className="text-sm text-blue-800 break-words">{question.explanation}</p>
+                      </div>
+                      {question.memo && (
+                        <Card className="p-4 bg-yellow-50 border-yellow-200">
+                          <h3 className="text-sm font-semibold text-yellow-700 mb-2">메모</h3>
+                          <p className="text-yellow-800 whitespace-pre-wrap break-words">{question.memo}</p>
+                        </Card>
+                      )}
+                    </div>
+                  </Card>
+                ))
+              )}
             </div>
           )}
         </div>
