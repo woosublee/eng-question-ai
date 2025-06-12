@@ -142,6 +142,11 @@ export default function HomePage() {
     localStorage.setItem("generationResults", JSON.stringify(generationResults))
   }, [generationResults])
 
+  // 저장된 문제 세트가 변경될 때마다 로컬 스토리지에 저장
+  useEffect(() => {
+    localStorage.setItem("savedQuestionSets", JSON.stringify(savedQuestionSets));
+  }, [savedQuestionSets]);
+
   const handleHistorySelect = (historyId: string) => {
     const selectedHistory = history.find(item => item.id === historyId)
     if (!selectedHistory) return
