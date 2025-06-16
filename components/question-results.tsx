@@ -97,6 +97,40 @@ export default function QuestionResults({
   )
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
 
+  // 유형, 학년, 난이도 옵션
+  const QUESTION_TYPES = [
+    "목적 찾기",
+    "심경의 이해",
+    "주장 찾기",
+    "밑줄 친 부분의 의미 찾기",
+    "요지 찾기",
+    "주제 찾기",
+    "제목 찾기",
+    "도표 및 실용문의 이해",
+    "내용 일치 불일치",
+    "가리키는 대상이 다른 것 찾기",
+    "빈칸 완성하기",
+    "흐름에 맞지 않는 문장 찾기",
+    "글의 순서 정하기",
+    "주어진 문장 넣기",
+    "요약문 완성하기",
+    "장문의 이해",
+    "복합 문단의 이해",
+  ];
+  const GRADE_OPTIONS = [
+    { value: "elementary-3", label: "초등학교 3학년" },
+    { value: "elementary-4", label: "초등학교 4학년" },
+    { value: "elementary-5", label: "초등학교 5학년" },
+    { value: "elementary-6", label: "초등학교 6학년" },
+    { value: "middle-1", label: "중학교 1학년" },
+    { value: "middle-2", label: "중학교 2학년" },
+    { value: "middle-3", label: "중학교 3학년" },
+    { value: "high-1", label: "고등학교 1학년" },
+    { value: "high-2", label: "고등학교 2학년" },
+    { value: "high-3", label: "고등학교 3학년" },
+  ];
+  const DIFFICULTY_OPTIONS = ["상", "중", "하"];
+
   useEffect(() => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0
@@ -587,6 +621,46 @@ export default function QuestionResults({
                           <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700">
                             저장하기
                           </Button>
+                        </div>
+                      </div>
+
+                      {/* 유형, 학년, 난이도 수정 UI */}
+                      <div className="flex gap-4 mb-4">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">유형</label>
+                          <select
+                            className="border rounded px-2 py-1 text-sm"
+                            value={editedQuestion.type}
+                            onChange={e => setEditedQuestion({ ...editedQuestion, type: e.target.value })}
+                          >
+                            {QUESTION_TYPES.map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">학년</label>
+                          <select
+                            className="border rounded px-2 py-1 text-sm"
+                            value={editedQuestion.grade}
+                            onChange={e => setEditedQuestion({ ...editedQuestion, grade: e.target.value })}
+                          >
+                            {GRADE_OPTIONS.map(opt => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">난이도</label>
+                          <select
+                            className="border rounded px-2 py-1 text-sm"
+                            value={editedQuestion.difficulty}
+                            onChange={e => setEditedQuestion({ ...editedQuestion, difficulty: e.target.value as any })}
+                          >
+                            {DIFFICULTY_OPTIONS.map(opt => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
                         </div>
                       </div>
 
