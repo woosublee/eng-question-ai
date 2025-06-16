@@ -226,7 +226,7 @@ export function QuestionGeneratorForm({ onGenerate }: QuestionGeneratorFormProps
             <div className="mb-8">
               <h2 className="text-lg font-medium text-gray-700 mb-4">난이도</h2>
               <div className="flex gap-2">
-                {(["하", "중", "상"] as const).map((level) => (
+                {(["상", "중", "하"] as const).map((level) => (
                   <Button
                     key={level}
                     variant={difficulty === level ? "default" : "outline"}
