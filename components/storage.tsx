@@ -92,6 +92,7 @@ export function Storage({ questionSets, onDelete, onUpdate, onHistorySelect }: S
   const [isDrawerMax, setIsDrawerMax] = useState(false)
   const defaultDrawerWidth = 480
   const maxDrawerWidth = getMaxDrawerWidth()
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
 
   const handleResizeMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -434,21 +435,21 @@ export function Storage({ questionSets, onDelete, onUpdate, onHistorySelect }: S
   };
 
   // 문항별 보기에서 문항 수정 저장
-  const handleQuestionSave = () => {
-    if (!editedQuestion) return;
+  const updateQuestionAndSet = (updatedQuestion: SavedQuestion) => {
+    if (!updatedQuestion) return;
     // 해당 문항이 속한 세트 찾기
-    const setId = questionSets.find(set => set.questions.some(q => q.id === editedQuestion.id))?.id;
+    const setId = questionSets.find(set => set.questions.some(q => q.id === updatedQuestion.id))?.id;
     if (!setId) return;
+
     const updatedSets = questionSets.map(set =>
       set.id === setId
-        ? { ...set, questions: set.questions.map(q => q.id === editedQuestion.id ? editedQuestion : q) }
+        ? { ...set, questions: set.questions.map(q => q.id === updatedQuestion.id ? updatedQuestion : q) }
         : set
     );
     onUpdate(setId, updatedSets.find(set => set.id === setId)!);
-    setEditingQuestionId(null);
-    setEditedQuestion(null);
-    toast({ title: "저장 완료", description: "문항이 성공적으로 저장되었습니다." });
+    toast({ title: "자동 저장 완료", description: "문항이 성공적으로 저장되었습니다." });
   };
+
   const handleQuestionCancel = () => {
     setEditingQuestionId(null);
     setEditedQuestion(null);
@@ -580,6 +581,54 @@ export function Storage({ questionSets, onDelete, onUpdate, onHistorySelect }: S
       toast({ title: "내보내기 실패", description: "내보낼 데이터가 없습니다.", variant: "destructive" })
     }
     setIsExportDialogOpen(false)
+  }
+
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
+    setDraggedIndex(index)
+    e.dataTransfer.effectAllowed = "move"
+  }
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>, dropIndex: number) => {
+    e.preventDefault()
+
+    if (draggedIndex === null || !editedQuestion) return
+
+    const newOptions = [...editedQuestion.options]
+    const draggedOption = newOptions[draggedIndex]
+
+    newOptions.splice(draggedIndex, 1)
+    newOptions.splice(dropIndex, 0, draggedOption)
+
+    let newCorrectAnswer = editedQuestion.correctAnswer
+    if (editedQuestion.correctAnswer === draggedIndex) {
+      newCorrectAnswer = dropIndex
+    } else if (draggedIndex < editedQuestion.correctAnswer && dropIndex >= editedQuestion.correctAnswer) {
+      newCorrectAnswer = editedQuestion.correctAnswer - 1
+    } else if (draggedIndex > editedQuestion.correctAnswer && dropIndex <= editedQuestion.correctAnswer) {
+      newCorrectAnswer = editedQuestion.correctAnswer + 1
+    }
+
+    setEditedQuestion({
+      ...editedQuestion,
+      options: newOptions,
+      correctAnswer: newCorrectAnswer,
+    })
+
+    setDraggedIndex(null)
+  }
+
+  const handleCorrectAnswerChange = (optionIndex: number) => {
+    if (editedQuestion) {
+      setEditedQuestion({
+        ...editedQuestion,
+        correctAnswer: optionIndex,
+      })
+    }
   }
 
   return (
@@ -916,172 +965,245 @@ export function Storage({ questionSets, onDelete, onUpdate, onHistorySelect }: S
                       </Button>
                     </div>
                     {editingQuestionId === question.id && editedQuestion ? (
-                      <div style={{ width: '100%', height: '100%', overflowY: 'auto', paddingTop: '56px' }}>
-                        {(() => {
-                          const q = filteredQuestions.find(q => q.id === openDrawerQuestionId)
-                          if (!q) return null
-                          return (
-                            <div className="max-w-lg mx-auto p-6">
-                              <div className="mb-6">
-                                <h2 className="text-xl font-bold mb-4">문항 수정</h2>
-                                <div className="mb-4">
-                                  <Label htmlFor="type">유형</Label>
-                                  <Select
-                                    value={editedQuestion?.type || ''}
-                                    onValueChange={(value: string) => setEditedQuestion(prev => prev ? { ...prev, type: value } : null)}
-                                  >
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="유형 선택" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="객관식">객관식</SelectItem>
-                                      <SelectItem value="주관식">주관식</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div className="mb-4">
-                                  <Label htmlFor="grade">학년</Label>
-                                  <Select
-                                    value={editedQuestion?.grade || ''}
-                                    onValueChange={(value: string) => setEditedQuestion(prev => prev ? { ...prev, grade: value } : null)}
-                                  >
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="학년 선택" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="초1">초등 1학년</SelectItem>
-                                      <SelectItem value="초2">초등 2학년</SelectItem>
-                                      <SelectItem value="초3">초등 3학년</SelectItem>
-                                      <SelectItem value="초4">초등 4학년</SelectItem>
-                                      <SelectItem value="초5">초등 5학년</SelectItem>
-                                      <SelectItem value="초6">초등 6학년</SelectItem>
-                                      <SelectItem value="중1">중등 1학년</SelectItem>
-                                      <SelectItem value="중2">중등 2학년</SelectItem>
-                                      <SelectItem value="중3">중등 3학년</SelectItem>
-                                      <SelectItem value="고1">고등 1학년</SelectItem>
-                                      <SelectItem value="고2">고등 2학년</SelectItem>
-                                      <SelectItem value="고3">고등 3학년</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div className="mb-4">
-                                  <Label htmlFor="difficulty">난이도</Label>
-                                  <Select
-                                    value={editedQuestion?.difficulty || ''}
-                                    onValueChange={(value: "상" | "중" | "하") => setEditedQuestion(prev => prev ? { ...prev, difficulty: value } : null)}
-                                  >
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="난이도 선택" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="상">상</SelectItem>
-                                      <SelectItem value="중">중</SelectItem>
-                                      <SelectItem value="하">하</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div className="mb-4">
-                                  <Label htmlFor="questionStatement">발문</Label>
-                                  <Textarea
-                                    id="questionStatement"
-                                    value={editedQuestion.questionStatement || ''}
-                                    onChange={(e) => setEditedQuestion(prev => prev ? { ...prev, questionStatement: e.target.value } : null)}
-                                    className="min-h-[100px]"
-                                  />
-                                </div>
-                                <div className="mb-4">
-                                  <Label htmlFor="passage">지문</Label>
-                                  <Textarea
-                                    id="passage"
-                                    value={editedQuestion.passage || ''}
-                                    onChange={(e) => setEditedQuestion(prev => prev ? { ...prev, passage: e.target.value } : null)}
-                                    className="min-h-[200px]"
-                                  />
-                                </div>
-                                <div className="mb-4">
-                                  <Label>선택지</Label>
-                                  <div className="space-y-2">
-                                    {editedQuestion.options.map((option, index) => (
-                                      <div key={index} className="flex gap-2">
-                                        <Input
-                                          value={option}
-                                          onChange={(e) => {
-                                            const newOptions = [...(editedQuestion.options || [])]
-                                            newOptions[index] = e.target.value
-                                            setEditedQuestion(prev => prev ? { ...prev, options: newOptions } : null)
-                                          }}
-                                        />
-                                        <Button
-                                          variant="outline"
-                                          size="icon"
-                                          onClick={() => {
-                                            const newOptions = [...(editedQuestion.options || []).filter((_, i) => i !== index)]
-                                            setEditedQuestion(prev => prev ? { ...prev, options: newOptions } : null)
-                                          }}
+                      <div
+                        style={{
+                          position: 'fixed',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: '100vh',
+                          width: '100vw',
+                          zIndex: 100,
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        <div
+                          style={{
+                            position: 'absolute',
+                            right: 0,
+                            top: 0,
+                            height: '100vh',
+                            width: isDrawerMax ? maxDrawerWidth : drawerWidth,
+                            maxWidth: maxDrawerWidth,
+                            minWidth: 320,
+                            background: 'white',
+                            pointerEvents: 'auto',
+                            boxShadow: 'rgba(0,0,0,0.08) -4px 0 24px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            zIndex: 200,
+                          }}
+                        >
+                          {/* 좌상단 아이콘 바 */}
+                          <div style={{ position: 'absolute', left: 0, top: 0, zIndex: 10001, display: 'flex', flexDirection: 'row', gap: 4, alignItems: 'center', padding: 8 }}>
+                            <button
+                              onClick={() => setOpenDrawerQuestionId(null)}
+                              className="rounded hover:bg-gray-200 p-1 text-gray-600 flex items-center"
+                              aria-label="드로우어 닫기"
+                            >
+                              <ChevronRight className="w-4 h-4 -mr-1" />
+                              <ChevronRight className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (isDrawerMax) {
+                                  setDrawerWidth(defaultDrawerWidth)
+                                  setIsDrawerMax(false)
+                                } else {
+                                  setDrawerWidth(maxDrawerWidth)
+                                  setIsDrawerMax(true)
+                                }
+                              }}
+                              className="rounded hover:bg-gray-200 p-1 text-gray-600"
+                              aria-label="드로우어 최대/기본 크기 토글"
+                            >
+                              <Expand className="w-5 h-5" />
+                            </button>
+                          </div>
+                          {/* 리사이즈 핸들 */}
+                          <div
+                            style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 8, cursor: 'ew-resize', zIndex: 9999, pointerEvents: 'auto' }}
+                            onMouseDown={handleResizeMouseDown}
+                          />
+                          <div style={{ width: '100%', height: '100%', overflowY: 'auto', paddingTop: '56px' }}>
+                            {(() => {
+                              const q = filteredQuestions.find(q => q.id === openDrawerQuestionId)
+                              if (!q) return null
+                              return (
+                                <div className="max-w-lg mx-auto p-6">
+                                  <div className="space-y-6">
+                                    <div className="flex items-center justify-between mb-6">
+                                      <h2 className="text-xl font-bold text-gray-900">문항 편집</h2>
+                                      {/* 저장 및 취소 버튼은 자동 저장 기능으로 인해 제거됨 */}
+                                    </div>
+
+                                    {/* 유형, 학년, 난이도 수정 UI */}
+                                    <div className="flex gap-4 mb-4">
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1">유형</label>
+                                        <select
+                                          className="border rounded px-2 py-1 text-sm"
+                                          value={editedQuestion?.type || ''}
+                                          onChange={e => setEditedQuestion(prev => prev ? { ...prev, type: e.target.value } : null)}
                                         >
-                                          <X className="h-4 w-4" />
-                                        </Button>
+                                          {QUESTION_TYPES.map(type => (
+                                            <option key={type} value={type}>{type}</option>
+                                          ))}
+                                        </select>
                                       </div>
-                                    ))}
-                                    <Button
-                                      variant="outline"
-                                      onClick={() => {
-                                        const newOptions = [...(editedQuestion.options || []), '']
-                                        setEditedQuestion(prev => prev ? { ...prev, options: newOptions } : null)
-                                      }}
-                                    >
-                                      선택지 추가
-                                    </Button>
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1">학년</label>
+                                        <select
+                                          className="border rounded px-2 py-1 text-sm"
+                                          value={editedQuestion?.grade || ''}
+                                          onChange={e => setEditedQuestion(prev => prev ? { ...prev, grade: e.target.value } : null)}
+                                        >
+                                          {GRADE_OPTIONS.map(opt => (
+                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1">난이도</label>
+                                        <select
+                                          className="border rounded px-2 py-1 text-sm"
+                                          value={editedQuestion?.difficulty || ''}
+                                          onChange={e => setEditedQuestion(prev => prev ? { ...prev, difficulty: e.target.value as any } : null)}
+                                        >
+                                          {DIFFICULTY_OPTIONS.map(opt => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-900 mb-3">발문</label>
+                                      <Input
+                                        value={editedQuestion?.questionStatement || ''}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                                          setEditedQuestion(prev => prev ? {
+                                            ...prev,
+                                            questionStatement: e.target.value,
+                                          } : null)
+                                        }
+                                        className="w-full"
+                                        placeholder="문제의 발문을 입력하세요"
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-900 mb-3">지문</label>
+                                      <Textarea
+                                        value={editedQuestion?.passage || ''}
+                                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                                          setEditedQuestion(prev => prev ? {
+                                            ...prev,
+                                            passage: e.target.value,
+                                          } : null)
+                                        }
+                                        rows={6}
+                                        className="w-full break-words"
+                                        placeholder="지문을 입력하세요"
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-900 mb-3">선택지</label>
+                                      <div className="space-y-3">
+                                        {editedQuestion?.options.map((option: string, optIndex: number) => (
+                                          <div
+                                            key={optIndex}
+                                            draggable
+                                            onDragStart={(e: React.DragEvent<HTMLDivElement>) => handleDragStart(e, optIndex)}
+                                            onDragOver={handleDragOver}
+                                            onDrop={(e: React.DragEvent<HTMLDivElement>) => handleDrop(e, optIndex)}
+                                            className={`flex items-center gap-3 p-2 rounded-lg border transition-colors ${
+                                              draggedIndex === optIndex
+                                                ? "bg-blue-50 border-blue-300"
+                                                : "bg-white border-gray-200 hover:bg-gray-50"
+                                            }`}
+                                          >
+                                            <div className="flex items-center gap-2 cursor-move">
+                                              <GripVertical className="w-4 h-4 text-gray-400" />
+                                              <span className="text-sm font-medium text-gray-700 flex-shrink-0 w-6">
+                                                {optIndex + 1}.
+                                              </span>
+                                            </div>
+                                            <Input
+                                              value={option}
+                                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                                const newOptions = [...(editedQuestion?.options || [])]
+                                                newOptions[optIndex] = e.target.value
+                                                setEditedQuestion(prev => prev ? {
+                                                  ...prev,
+                                                  options: newOptions,
+                                                } : null)
+                                              }}
+                                              className="flex-1"
+                                              placeholder={`선택지 ${optIndex + 1}을 입력하세요`}
+                                            />
+                                            <div className="flex items-center gap-2 flex-shrink-0">
+                                              {editedQuestion?.correctAnswer === optIndex ? (
+                                                <div className="flex items-center gap-1 text-green-600">
+                                                  <span className="text-sm font-medium">정답</span>
+                                                  <CheckCircle className="w-4 h-4" />
+                                                </div>
+                                              ) : (
+                                                <button
+                                                  onClick={() => handleCorrectAnswerChange(optIndex)}
+                                                  className="flex items-center gap-1 text-gray-400 hover:text-green-600 transition-colors"
+                                                >
+                                                  <span className="text-sm">오답</span>
+                                                  <XCircle className="w-4 h-4" />
+                                                </button>
+                                              )}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                      <p className="text-xs text-gray-500 mt-2">
+                                        좌측 = 아이콘을 드래그하여 선택지 순서를 변경할 수 있습니다.
+                                      </p>
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-900 mb-3">해설</label>
+                                      <Textarea
+                                        value={editedQuestion?.explanation || ''}
+                                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                                          setEditedQuestion(prev => prev ? {
+                                            ...prev,
+                                            explanation: e.target.value,
+                                          } : null)
+                                        }
+                                        rows={3}
+                                        className="w-full break-words"
+                                        placeholder="이 문항의 해설을 입력하세요"
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-900 mb-3">메모 (선택사항)</label>
+                                      <Textarea
+                                        value={editedQuestion?.memo || ''}
+                                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                                          setEditedQuestion(prev => prev ? {
+                                            ...prev,
+                                            memo: e.target.value,
+                                          } : null)
+                                        }
+                                        rows={3}
+                                        className="w-full break-words"
+                                        placeholder="이 문항에 대한 메모를 입력하세요 (예: 특정 시험 출제, 오답률 높음)"
+                                      />
+                                    </div>
                                   </div>
                                 </div>
-                                <div className="mb-4">
-                                  <Label htmlFor="correctAnswer">정답</Label>
-                                  <Select
-                                    value={String(editedQuestion?.correctAnswer)}
-                                    onValueChange={(value: string) => setEditedQuestion(prev => prev ? { ...prev, correctAnswer: Number(value) } : null)}
-                                  >
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="정답 선택" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {editedQuestion?.options.map((_, index) => (
-                                        <SelectItem key={index} value={String(index)}>
-                                          {index + 1}번
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div className="mb-4">
-                                  <Label htmlFor="explanation">해설</Label>
-                                  <Textarea
-                                    id="explanation"
-                                    value={editedQuestion.explanation || ''}
-                                    onChange={(e) => setEditedQuestion(prev => prev ? { ...prev, explanation: e.target.value } : null)}
-                                    className="min-h-[100px]"
-                                  />
-                                </div>
-                                <div className="mb-4">
-                                  <Label htmlFor="memo">메모</Label>
-                                  <Textarea
-                                    id="memo"
-                                    value={editedQuestion.memo || ''}
-                                    onChange={(e) => setEditedQuestion(prev => prev ? { ...prev, memo: e.target.value } : null)}
-                                    className="min-h-[100px]"
-                                  />
-                                </div>
-                              </div>
-                              <div className="flex justify-end gap-2">
-                                <Button variant="outline" onClick={() => setOpenDrawerQuestionId(null)}>
-                                  취소
-                                </Button>
-                                <Button onClick={handleQuestionSave}>
-                                  저장
-                                </Button>
-                              </div>
-                            </div>
-                          )
-                        })()}
+                              )
+                            })()}
+                          </div>
+                        </div>
                       </div>
                     ) : (
                       <div className="space-y-4">
@@ -1330,162 +1452,181 @@ export function Storage({ questionSets, onDelete, onUpdate, onHistorySelect }: S
                         if (!q) return null
                         return (
                           <div className="max-w-lg mx-auto p-6">
-                            <div className="mb-6">
-                              <h2 className="text-xl font-bold mb-4">문항 수정</h2>
-                              <div className="mb-4">
-                                <Label htmlFor="type">유형</Label>
-                                <Select
-                                  value={editedQuestion?.type || ''}
-                                  onValueChange={(value: string) => setEditedQuestion(prev => prev ? { ...prev, type: value } : null)}
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="유형 선택" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="객관식">객관식</SelectItem>
-                                    <SelectItem value="주관식">주관식</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div className="mb-4">
-                                <Label htmlFor="grade">학년</Label>
-                                <Select
-                                  value={editedQuestion?.grade || ''}
-                                  onValueChange={(value: string) => setEditedQuestion(prev => prev ? { ...prev, grade: value } : null)}
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="학년 선택" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="초1">초등 1학년</SelectItem>
-                                    <SelectItem value="초2">초등 2학년</SelectItem>
-                                    <SelectItem value="초3">초등 3학년</SelectItem>
-                                    <SelectItem value="초4">초등 4학년</SelectItem>
-                                    <SelectItem value="초5">초등 5학년</SelectItem>
-                                    <SelectItem value="초6">초등 6학년</SelectItem>
-                                    <SelectItem value="중1">중등 1학년</SelectItem>
-                                    <SelectItem value="중2">중등 2학년</SelectItem>
-                                    <SelectItem value="중3">중등 3학년</SelectItem>
-                                    <SelectItem value="고1">고등 1학년</SelectItem>
-                                    <SelectItem value="고2">고등 2학년</SelectItem>
-                                    <SelectItem value="고3">고등 3학년</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div className="mb-4">
-                                <Label htmlFor="difficulty">난이도</Label>
-                                <Select
-                                  value={editedQuestion?.difficulty || ''}
-                                  onValueChange={(value: "상" | "중" | "하") => setEditedQuestion(prev => prev ? { ...prev, difficulty: value } : null)}
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="난이도 선택" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="상">상</SelectItem>
-                                    <SelectItem value="중">중</SelectItem>
-                                    <SelectItem value="하">하</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div className="mb-4">
-                                <Label htmlFor="questionStatement">발문</Label>
-                                <Textarea
-                                  id="questionStatement"
-                                  value={editedQuestion?.questionStatement || ''}
-                                  onChange={(e) => setEditedQuestion(prev => prev ? { ...prev, questionStatement: e.target.value } : null)}
-                                  className="min-h-[100px]"
-                                />
-                              </div>
-                              <div className="mb-4">
-                                <Label htmlFor="passage">지문</Label>
-                                <Textarea
-                                  id="passage"
-                                  value={editedQuestion?.passage || ''}
-                                  onChange={(e) => setEditedQuestion(prev => prev ? { ...prev, passage: e.target.value } : null)}
-                                  className="min-h-[200px]"
-                                />
-                              </div>
-                              <div className="mb-4">
-                                <Label>선택지</Label>
-                                <div className="space-y-2">
-                                  {editedQuestion?.options.map((option, index) => (
-                                    <div key={index} className="flex gap-2">
-                                      <Input
-                                        value={option}
-                                        onChange={(e) => {
-                                          const newOptions = [...(editedQuestion?.options || [])]
-                                          newOptions[index] = e.target.value
-                                          setEditedQuestion(prev => prev ? { ...prev, options: newOptions } : null)
-                                        }}
-                                      />
-                                      <Button
-                                        variant="outline"
-                                        size="icon"
-                                        onClick={() => {
-                                          const newOptions = [...(editedQuestion?.options || []).filter((_, i) => i !== index)]
-                                          setEditedQuestion(prev => prev ? { ...prev, options: newOptions } : null)
-                                        }}
-                                      >
-                                        <X className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  ))}
-                                  <Button
-                                    variant="outline"
-                                    onClick={() => {
-                                      const newOptions = [...(editedQuestion?.options || []), '']
-                                      setEditedQuestion(prev => prev ? { ...prev, options: newOptions } : null)
-                                    }}
+                            <div className="space-y-6">
+                              <div className="flex items-center justify-between mb-6">
+                                <h2 className="text-xl font-bold text-gray-900">문항 편집</h2>
+                                <div className="flex gap-2">
+                                  <Button 
+                                    onClick={() => editedQuestion && updateQuestionAndSet(editedQuestion)} 
+                                    className="bg-blue-600 hover:bg-blue-700"
+                                    disabled={!editedQuestion}
                                   >
-                                    선택지 추가
+                                    저장하기
                                   </Button>
                                 </div>
                               </div>
-                              <div className="mb-4">
-                                <Label htmlFor="correctAnswer">정답</Label>
-                                <Select
-                                  value={String(editedQuestion?.correctAnswer)}
-                                  onValueChange={(value: string) => setEditedQuestion(prev => prev ? { ...prev, correctAnswer: Number(value) } : null)}
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="정답 선택" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {editedQuestion?.options.map((_, index) => (
-                                      <SelectItem key={index} value={String(index)}>
-                                        {index + 1}번
-                                      </SelectItem>
+
+                              {/* 유형, 학년, 난이도 수정 UI */}
+                              <div className="flex gap-4 mb-4">
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">유형</label>
+                                  <select
+                                    className="border rounded px-2 py-1 text-sm"
+                                    value={editedQuestion?.type || ''}
+                                    onChange={e => setEditedQuestion(prev => prev ? { ...prev, type: e.target.value } : null)}
+                                  >
+                                    {QUESTION_TYPES.map(type => (
+                                      <option key={type} value={type}>{type}</option>
                                     ))}
-                                  </SelectContent>
-                                </Select>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">학년</label>
+                                  <select
+                                    className="border rounded px-2 py-1 text-sm"
+                                    value={editedQuestion?.grade || ''}
+                                    onChange={e => setEditedQuestion(prev => prev ? { ...prev, grade: e.target.value } : null)}
+                                  >
+                                    {GRADE_OPTIONS.map(opt => (
+                                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">난이도</label>
+                                  <select
+                                    className="border rounded px-2 py-1 text-sm"
+                                    value={editedQuestion?.difficulty || ''}
+                                    onChange={e => setEditedQuestion(prev => prev ? { ...prev, difficulty: e.target.value as any } : null)}
+                                  >
+                                    {DIFFICULTY_OPTIONS.map(opt => (
+                                      <option key={opt} value={opt}>{opt}</option>
+                                    ))}
+                                  </select>
+                                </div>
                               </div>
-                              <div className="mb-4">
-                                <Label htmlFor="explanation">해설</Label>
+
+                              <div>
+                                <label className="block text-sm font-medium text-gray-900 mb-3">발문</label>
+                                <Input
+                                  value={editedQuestion?.questionStatement || ''}
+                                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                                    setEditedQuestion(prev => prev ? {
+                                      ...prev,
+                                      questionStatement: e.target.value,
+                                    } : null)
+                                  }
+                                  className="w-full"
+                                  placeholder="문제의 발문을 입력하세요"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-sm font-medium text-gray-900 mb-3">지문</label>
                                 <Textarea
-                                  id="explanation"
+                                  value={editedQuestion?.passage || ''}
+                                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                                    setEditedQuestion(prev => prev ? {
+                                      ...prev,
+                                      passage: e.target.value,
+                                    } : null)
+                                  }
+                                  rows={6}
+                                  className="w-full break-words"
+                                  placeholder="지문을 입력하세요"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-sm font-medium text-gray-900 mb-3">선택지</label>
+                                <div className="space-y-3">
+                                  {editedQuestion?.options.map((option: string, optIndex: number) => (
+                                    <div
+                                      key={optIndex}
+                                      draggable
+                                      onDragStart={(e: React.DragEvent<HTMLDivElement>) => handleDragStart(e, optIndex)}
+                                      onDragOver={handleDragOver}
+                                      onDrop={(e: React.DragEvent<HTMLDivElement>) => handleDrop(e, optIndex)}
+                                      className={`flex items-center gap-3 p-2 rounded-lg border transition-colors ${
+                                        draggedIndex === optIndex
+                                          ? "bg-blue-50 border-blue-300"
+                                          : "bg-white border-gray-200 hover:bg-gray-50"
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2 cursor-move">
+                                        <GripVertical className="w-4 h-4 text-gray-400" />
+                                        <span className="text-sm font-medium text-gray-700 flex-shrink-0 w-6">
+                                          {optIndex + 1}.
+                                        </span>
+                                      </div>
+                                      <Input
+                                        value={option}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                          const newOptions = [...(editedQuestion?.options || [])]
+                                          newOptions[optIndex] = e.target.value
+                                          setEditedQuestion(prev => prev ? {
+                                            ...prev,
+                                            options: newOptions,
+                                          } : null)
+                                        }}
+                                        className="flex-1"
+                                        placeholder={`선택지 ${optIndex + 1}을 입력하세요`}
+                                      />
+                                      <div className="flex items-center gap-2 flex-shrink-0">
+                                        {editedQuestion?.correctAnswer === optIndex ? (
+                                          <div className="flex items-center gap-1 text-green-600">
+                                            <span className="text-sm font-medium">정답</span>
+                                            <CheckCircle className="w-4 h-4" />
+                                          </div>
+                                        ) : (
+                                          <button
+                                            onClick={() => handleCorrectAnswerChange(optIndex)}
+                                            className="flex items-center gap-1 text-gray-400 hover:text-green-600 transition-colors"
+                                          >
+                                            <span className="text-sm">오답</span>
+                                            <XCircle className="w-4 h-4" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                                <p className="text-xs text-gray-500 mt-2">
+                                  좌측 = 아이콘을 드래그하여 선택지 순서를 변경할 수 있습니다.
+                                </p>
+                              </div>
+
+                              <div>
+                                <label className="block text-sm font-medium text-gray-900 mb-3">해설</label>
+                                <Textarea
                                   value={editedQuestion?.explanation || ''}
-                                  onChange={(e) => setEditedQuestion(prev => prev ? { ...prev, explanation: e.target.value } : null)}
-                                  className="min-h-[100px]"
+                                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                                    setEditedQuestion(prev => prev ? {
+                                      ...prev,
+                                      explanation: e.target.value,
+                                    } : null)
+                                  }
+                                  rows={3}
+                                  className="w-full break-words"
+                                  placeholder="이 문항의 해설을 입력하세요"
                                 />
                               </div>
-                              <div className="mb-4">
-                                <Label htmlFor="memo">메모</Label>
+
+                              <div>
+                                <label className="block text-sm font-medium text-gray-900 mb-3">메모 (선택사항)</label>
                                 <Textarea
-                                  id="memo"
                                   value={editedQuestion?.memo || ''}
-                                  onChange={(e) => setEditedQuestion(prev => prev ? { ...prev, memo: e.target.value } : null)}
-                                  className="min-h-[100px]"
+                                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                                    setEditedQuestion(prev => prev ? {
+                                      ...prev,
+                                      memo: e.target.value,
+                                    } : null)
+                                  }
+                                  rows={3}
+                                  className="w-full break-words"
+                                  placeholder="이 문항에 대한 메모를 입력하세요 (예: 특정 시험 출제, 오답률 높음)"
                                 />
                               </div>
-                            </div>
-                            <div className="flex justify-end gap-2">
-                              <Button variant="outline" onClick={() => setOpenDrawerQuestionId(null)}>
-                                취소
-                              </Button>
-                              <Button onClick={handleQuestionSave}>
-                                저장
-                              </Button>
                             </div>
                           </div>
                         )
