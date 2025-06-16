@@ -75,7 +75,7 @@ export function Storage({ questionSets, onDelete, onUpdate, onHistorySelect }: S
   const [questionFields, setQuestionFields] = useState<QuestionFieldsState>(
     EXPORT_FIELDS.reduce((acc, field) => ({ ...acc, [field.key]: true }), {} as QuestionFieldsState)
   )
-  const [currentView, setCurrentView] = useState<"set" | "question-card" | "question-table">("set")
+  const [currentView, setCurrentView] = useState<"set" | "question-card" | "question-table">("question-table")
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null)
   const [editedQuestion, setEditedQuestion] = useState<SavedQuestion | null>(null)
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set())
@@ -663,7 +663,7 @@ export function Storage({ questionSets, onDelete, onUpdate, onHistorySelect }: S
               {questionSets.reduce((sum, set) => sum + set.questions.length, 0)}개 문항
             </div>
             <div className="flex rounded-md shadow-sm">
-              <Button
+              {/* <Button
                 variant={currentView === "set" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setCurrentView("set")}
@@ -671,25 +671,26 @@ export function Storage({ questionSets, onDelete, onUpdate, onHistorySelect }: S
               >
                 <ListFilter className="w-4 h-4 mr-2" />
                 세트별 보기
+              </Button> */}
+              <Button
+                variant={currentView === "question-table" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setCurrentView("question-table")}
+                className="rounded-r-none"
+              >
+                <BookOpen className="w-4 h-4 mr-2" />
+                문항 테이블
               </Button>
               <Button
                 variant={currentView === "question-card" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setCurrentView("question-card")}
-                className="rounded-none"
+                className="rounded-l-none"
               >
                 <BookOpen className="w-4 h-4 mr-2" />
                 문항 카드
               </Button>
-              <Button
-                variant={currentView === "question-table" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setCurrentView("question-table")}
-                className="rounded-l-none"
-              >
-                <BookOpen className="w-4 h-4 mr-2" />
-                문항 테이블
-              </Button>
+              
             </div>
           </div>
         </div>
