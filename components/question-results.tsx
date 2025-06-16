@@ -681,6 +681,22 @@ export default function QuestionResults({
                       </div>
 
                       <div>
+                        <label className="block text-sm font-medium text-gray-900 mb-3">해설</label>
+                        <Textarea
+                          value={editedQuestion.explanation}
+                          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                            setEditedQuestion({
+                              ...editedQuestion,
+                              explanation: e.target.value,
+                            })
+                          }
+                          rows={3}
+                          className="w-full break-words"
+                          placeholder="이 문항의 해설을 입력하세요"
+                        />
+                      </div>
+
+                      <div>
                         <label className="block text-sm font-medium text-gray-900 mb-3">메모 (선택사항)</label>
                         <Textarea
                           value={editedQuestion.memo || ''}
