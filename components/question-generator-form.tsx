@@ -277,9 +277,33 @@ export function QuestionGeneratorForm({ onGenerate }: QuestionGeneratorFormProps
                         <Minus className="w-3 h-3" />
                       </Button>
                       <Input
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         value={qt.count === 0 ? "" : qt.count.toString()}
-                        onChange={(e) => handleDirectCountChange(qt.type, e.target.value)}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === "" || /^\d+$/.test(value)) {
+                            const numValue = parseInt(value);
+                            if (value === "" || (numValue >= 1 && numValue <= 20)) {
+                              handleDirectCountChange(qt.type, value);
+                            }
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          const allowedKeys = [
+                            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                            'Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+                            'Tab', 'Home', 'End'
+                          ];
+                          
+                          if (!allowedKeys.includes(e.key)) {
+                            e.preventDefault();
+                          }
+                        }}
+                        onPaste={(e) => {
+                          e.preventDefault();
+                        }}
                         onBlur={() => {
                           if (qt.count === 0) {
                             setQuestionTypes(prev =>
@@ -291,8 +315,6 @@ export function QuestionGeneratorForm({ onGenerate }: QuestionGeneratorFormProps
                           }
                         }}
                         className="w-10 text-center text-sm p-1 border-none focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [-moz-appearance:textfield]"
-                        min={1}
-                        max={20}
                       />
                       <Button
                         variant="outline"
