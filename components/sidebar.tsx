@@ -163,7 +163,13 @@ export function Sidebar({
                             }}
                           />
                         ) : (
-                          <span className="font-bold text-base text-gray-900">{item.title || '타이틀'}</span>
+                          <span className="font-bold text-base text-gray-900">
+                            {item.title
+                              ? item.title.length > 10
+                                ? item.title.slice(0, 10) + '...'
+                                : item.title
+                              : '타이틀'}
+                          </span>
                         )}
                       </div>
                     </div>
