@@ -69,6 +69,7 @@ export interface GenerationHistory {
   grade: string
   count: number // Total requested count for this history item
   status: "generating" | "completed" | "failed"
+  title: string
 }
 
 export interface SavedQuestion {
@@ -191,21 +192,22 @@ export default function HomePage() {
   }
 
   const handleGenerate = async (formData: QuestionFormData) => {
+    setIsLoading(true);
     const newHistory: GenerationHistory = {
       id: `history-${Date.now()}`,
-      type: formData.types.map(t => t.type).join(", "),
+      type: formData.types[0].type,
+      count: formData.types[0].count,
       difficulty: formData.difficulty,
       grade: formData.grade,
-      count: formData.types.reduce((sum, t) => sum + t.count, 0),
+      status: "generating",
       timestamp: new Date(),
-      status: "generating"
+      title: `${formData.types[0].type} ${formData.types[0].count}개`
     };
 
     setHistory(prev => [newHistory, ...prev]);
-    setCurrentView("results");
     setSelectedHistoryId(newHistory.id);
     setCurrentFormData(formData);
-    setIsLoading(true); // Set loading to true when generation starts
+    setCurrentView("results");
 
     // Initialize generation results for this history item
     setGenerationResults(prev => ({
@@ -373,6 +375,30 @@ export default function HomePage() {
     const updatedResults = { ...generationResults }
     delete updatedResults[historyId]
     setGenerationResults(updatedResults)
+
+    // 현재 보고 있던 히스토리가 삭제된 경우 처리
+    if (selectedHistoryId === historyId) {
+      if (updatedHistory.length > 0) {
+        // 삭제된 것보다 이전(더 나중에 생성된 것) 중 가장 최근 항목으로 이동
+        const deletedIndex = history.findIndex(item => item.id === historyId)
+        // deletedIndex는 삭제 전 배열에서의 위치
+        // updatedHistory는 삭제 후 배열이므로, deletedIndex-1이 가장 최근 이전 항목
+        const nextIndex = deletedIndex > 0 ? deletedIndex - 1 : 0
+        setSelectedHistoryId(updatedHistory[nextIndex].id)
+        setCurrentFormData({
+          types: [{ type: updatedHistory[nextIndex].type, count: updatedHistory[nextIndex].count }],
+          difficulty: updatedHistory[nextIndex].difficulty,
+          grade: updatedHistory[nextIndex].grade
+        })
+        setCurrentView("results")
+      } else {
+        // 모두 삭제된 경우 새 문항 생성 페이지로 이동
+        setSelectedHistoryId(null)
+        setCurrentFormData(null)
+        setCurrentView("form")
+        setIsLoading(false)
+      }
+    }
   }
 
   const handleQuestionUpdate = (updatedQuestion: SavedQuestion) => {
@@ -390,6 +416,10 @@ export default function HomePage() {
     });
   }
 
+  const handleTitleEdit = (id: string, newTitle: string) => {
+    setHistory(prev => prev.map(item => item.id === id ? { ...item, title: newTitle } : item))
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar
@@ -399,6 +429,7 @@ export default function HomePage() {
         onDeleteHistory={handleDeleteHistory}
         onGoToStorage={handleGoToStorage}
         onNewGeneration={handleBackToForm}
+        onTitleEdit={handleTitleEdit}
       />
 
       <main className="flex-1 flex flex-col relative">

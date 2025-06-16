@@ -1,9 +1,12 @@
 "use client"
 
-import { Plus, Clock, CheckCircle, AlertCircle, Loader, Archive, X } from "lucide-react"
+import { Plus, Clock, CheckCircle, AlertCircle, Loader, Archive, X, MoreHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { GenerationHistory } from "@/app/page"
+import { useState } from "react"
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
+import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog"
 
 interface SidebarProps {
   history: GenerationHistory[]
@@ -12,6 +15,7 @@ interface SidebarProps {
   onNewGeneration: () => void
   onGoToStorage: () => void
   onDeleteHistory: (id: string) => void
+  onTitleEdit?: (id: string, newTitle: string) => void
 }
 
 export function Sidebar({ 
@@ -20,8 +24,14 @@ export function Sidebar({
   onHistorySelect, 
   onNewGeneration, 
   onGoToStorage,
-  onDeleteHistory 
+  onDeleteHistory,
+  onTitleEdit
 }: SidebarProps) {
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState<string>("")
+  const [popoverOpenId, setPopoverOpenId] = useState<string | null>(null)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
+
   const getStatusIcon = (status: GenerationHistory["status"]) => {
     switch (status) {
       case "completed":
@@ -91,36 +101,78 @@ export function Sidebar({
                   onClick={() => onHistorySelect(item.id)}
                 >
                   <div 
-                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDeleteHistory(item.id)
-                    }}
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1"
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 text-gray-500 hover:text-red-500 hover:bg-red-50"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
+                    <Popover open={popoverOpenId === item.id} onOpenChange={open => setPopoverOpenId(open ? item.id : null)}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-gray-500 hover:text-blue-500 hover:bg-blue-50"
+                          onClick={() => setPopoverOpenId(item.id)}
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="end" className="w-32 p-1">
+                        <button
+                          className="w-full text-left text-xs px-3 py-2 hover:bg-gray-100 rounded"
+                          onClick={() => {
+                            setEditingId(item.id)
+                            setEditingTitle(item.title || "")
+                            setPopoverOpenId(null)
+                          }}
+                        >이름 바꾸기</button>
+                        <button
+                          className="w-full text-left text-xs px-3 py-2 hover:bg-red-50 text-red-600 rounded"
+                          onClick={() => {
+                            setDeleteTargetId(item.id)
+                            setPopoverOpenId(null)
+                          }}
+                        >삭제</button>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <div>
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
                         {getStatusIcon(item.status)}
-                        <span className="text-sm font-medium">
-                          {getGradeLabel(item.grade)} • 난이도: {item.difficulty}
-                        </span>
+                        {editingId === item.id ? (
+                          <input
+                            className="font-bold text-base text-gray-900 bg-white border border-blue-300 rounded px-1 py-0.5 w-32 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            value={editingTitle}
+                            autoFocus
+                            onChange={e => setEditingTitle(e.target.value)}
+                            onBlur={() => {
+                              if (editingTitle.trim() && editingTitle !== item.title) {
+                                onTitleEdit && onTitleEdit(item.id, editingTitle.trim())
+                              }
+                              setEditingId(null)
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") {
+                                if (editingTitle.trim() && editingTitle !== item.title) {
+                                  onTitleEdit && onTitleEdit(item.id, editingTitle.trim())
+                                }
+                                setEditingId(null)
+                              } else if (e.key === "Escape") {
+                                setEditingId(null)
+                                setEditingTitle("")
+                              }
+                            }}
+                          />
+                        ) : (
+                          <span className="font-bold text-base text-gray-900">{item.title || '타이틀'}</span>
+                        )}
                       </div>
-                      <span className="text-xs text-gray-500">{formatDate(item.timestamp)}</span>
                     </div>
-
-                    <div className="text-xs text-gray-600 mb-1">총 {item.count}개 문항</div>
-
-                    <div className="text-xs text-gray-500">
-                      {item.type}
+                    <div className="flex items-center justify-between text-xs text-gray-600 mb-0.5">
+                      <span>{getGradeLabel(item.grade)} • 난이도: {item.difficulty}</span>
+                      <span className="text-gray-500">{formatDate(item.timestamp)}</span>
                     </div>
+                    <div className="text-xs text-gray-500">{item.type}</div>
+                    <div className="text-xs text-gray-500">총 {item.count}개 문항</div>
                   </div>
                 </div>
               ))
@@ -135,6 +187,20 @@ export function Sidebar({
           보관함
         </Button>
       </div>
+
+      {/* 삭제 확인 다이얼로그 */}
+      <AlertDialog open={!!deleteTargetId} onOpenChange={open => { if (!open) setDeleteTargetId(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>삭제할까요?</AlertDialogTitle>
+          </AlertDialogHeader>
+          <div className="text-sm text-gray-600">삭제하면 복구할 수 없습니다.</div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { if (deleteTargetId) { onDeleteHistory(deleteTargetId); setDeleteTargetId(null); } }}>삭제</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
