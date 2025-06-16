@@ -7,12 +7,13 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
-import { Search, Trash2, Eye, Download, Calendar, BookOpen, Tag, Edit, ListFilter } from "lucide-react"
+import { Search, Trash2, Eye, Download, Calendar, BookOpen, Tag, Edit, ListFilter, CheckCircle, XCircle, GripVertical } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import type { SavedQuestionSet, SavedQuestion } from "@/app/page"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog"
 
 interface StorageProps {
   questionSets: SavedQuestionSet[]
@@ -66,6 +67,44 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
     EXPORT_FIELDS.reduce((acc, field) => ({ ...acc, [field.key]: true }), {} as QuestionFieldsState)
   )
   const [currentView, setCurrentView] = useState<"set" | "question">("set")
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null)
+  const [editedQuestion, setEditedQuestion] = useState<SavedQuestion | null>(null)
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set())
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+
+  // 유형, 학년, 난이도 옵션
+  const QUESTION_TYPES = [
+    "목적 찾기",
+    "심경의 이해",
+    "주장 찾기",
+    "밑줄 친 부분의 의미 찾기",
+    "요지 찾기",
+    "주제 찾기",
+    "제목 찾기",
+    "도표 및 실용문의 이해",
+    "내용 일치 불일치",
+    "가리키는 대상이 다른 것 찾기",
+    "빈칸 완성하기",
+    "흐름에 맞지 않는 문장 찾기",
+    "글의 순서 정하기",
+    "주어진 문장 넣기",
+    "요약문 완성하기",
+    "장문의 이해",
+    "복합 문단의 이해",
+  ];
+  const GRADE_OPTIONS = [
+    { value: "elementary-3", label: "초등학교 3학년" },
+    { value: "elementary-4", label: "초등학교 4학년" },
+    { value: "elementary-5", label: "초등학교 5학년" },
+    { value: "elementary-6", label: "초등학교 6학년" },
+    { value: "middle-1", label: "중학교 1학년" },
+    { value: "middle-2", label: "중학교 2학년" },
+    { value: "middle-3", label: "중학교 3학년" },
+    { value: "high-1", label: "고등학교 1학년" },
+    { value: "high-2", label: "고등학교 2학년" },
+    { value: "high-3", label: "고등학교 3학년" },
+  ];
+  const DIFFICULTY_OPTIONS = ["상", "중", "하"];
 
   const getGradeLabel = (gradeValue: string) => {
     const gradeLabels: Record<string, string> = {
@@ -345,6 +384,65 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
     setIsExportDialogOpen(false);
   };
 
+  // 문항별 보기에서 문항 수정 저장
+  const handleQuestionSave = () => {
+    if (!editedQuestion) return;
+    // 해당 문항이 속한 세트 찾기
+    const setId = questionSets.find(set => set.questions.some(q => q.id === editedQuestion.id))?.id;
+    if (!setId) return;
+    const updatedSets = questionSets.map(set =>
+      set.id === setId
+        ? { ...set, questions: set.questions.map(q => q.id === editedQuestion.id ? editedQuestion : q) }
+        : set
+    );
+    onUpdate(setId, updatedSets.find(set => set.id === setId)!);
+    setEditingQuestionId(null);
+    setEditedQuestion(null);
+    toast({ title: "저장 완료", description: "문항이 성공적으로 저장되었습니다." });
+  };
+  const handleQuestionCancel = () => {
+    setEditingQuestionId(null);
+    setEditedQuestion(null);
+  };
+
+  // 선택/전체선택 체크박스 핸들러
+  const handleQuestionSelect = (questionId: string, checked: boolean) => {
+    setSelectedQuestionIds(prev => {
+      const newSet = new Set(prev)
+      if (checked) newSet.add(questionId)
+      else newSet.delete(questionId)
+      return newSet
+    })
+  }
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedQuestionIds(new Set(filteredQuestions.map(q => q.id)))
+    } else {
+      setSelectedQuestionIds(new Set())
+    }
+  }
+  const isAllSelected = selectedQuestionIds.size === filteredQuestions.length && filteredQuestions.length > 0
+  const isPartiallySelected = selectedQuestionIds.size > 0 && selectedQuestionIds.size < filteredQuestions.length
+
+  // 선택 삭제
+  const handleDeleteSelectedQuestions = () => {
+    // 각 문항이 속한 세트별로 그룹핑
+    const setMap = new Map<string, SavedQuestionSet>()
+    questionSets.forEach(set => setMap.set(set.id, { ...set }))
+    selectedQuestionIds.forEach(qid => {
+      for (const set of setMap.values()) {
+        set.questions = set.questions.filter(q => q.id !== qid)
+      }
+    })
+    // 실제로 변경된 세트만 업데이트
+    setMap.forEach((set, setId) => {
+      onUpdate(setId, set)
+    })
+    setSelectedQuestionIds(new Set())
+    setIsDeleteDialogOpen(false)
+    toast({ title: "삭제 완료", description: "선택한 문항이 삭제되었습니다." })
+  }
+
   return (
     <div className="flex-1 flex flex-col overflow-y-auto">
       {/* 상단 헤더 영역 - 고정 */}
@@ -560,6 +658,24 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
 
           {currentView === "question" && (
             <div className="space-y-6">
+              {/* 전체 선택 체크박스 & 선택 삭제 버튼 */}
+              <div className="flex items-center gap-4 mb-2">
+                <Checkbox
+                  checked={isAllSelected}
+                  ref={el => { if (el) (el as HTMLInputElement).indeterminate = isPartiallySelected }}
+                  onCheckedChange={checked => {
+                    if (typeof checked !== 'boolean') return;
+                    handleSelectAll(checked);
+                  }}
+                  disabled={filteredQuestions.length === 0}
+                />
+                <span className="text-sm">전체 선택</span>
+                {selectedQuestionIds.size > 0 && (
+                  <Button variant="destructive" size="sm" onClick={() => setIsDeleteDialogOpen(true)}>
+                    선택 삭제 ({selectedQuestionIds.size})
+                  </Button>
+                )}
+              </div>
               {filteredQuestions.length === 0 ? (
                 <div className="text-center py-12">
                   <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-4" />
@@ -573,72 +689,209 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
               ) : (
                 filteredQuestions.map((question, index) => (
                   <Card key={question.id} className="p-6">
-                    <div className="space-y-4">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-500">문제 {index + 1}</span>
-                          <Badge variant="secondary" className="text-xs">
-                            {question.type}
-                          </Badge>
-                          <Badge variant="outline" className="text-xs">
-                            {getGradeLabel(question.grade)}
-                          </Badge>
-                          <Badge variant="outline" className="text-xs">
-                            난이도: {question.difficulty}
-                          </Badge>
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          세트: {question.parentSetTitle} ({new Date(question.parentSetSavedAt || '').toLocaleDateString()})
-                        </div>
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-medium text-gray-700 mb-3">발문</h3>
-                        <p className="font-medium text-gray-900 bg-blue-50 p-3 rounded-lg break-words">
-                          {question.questionStatement}
-                        </p>
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-medium text-gray-700 mb-3">지문</h3>
-                        <div className="bg-gray-50 p-4 rounded-lg">
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{question.passage}</p>
-                        </div>
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-medium text-gray-700 mb-3">선택지</h3>
-                        <div className="space-y-2">
-                          {question.options.map((option, optIndex) => (
-                            <div
-                              key={optIndex}
-                              className={`flex items-start gap-2 p-3 rounded-lg border ${
-                                optIndex === question.correctAnswer
-                                  ? "bg-green-50 border-green-200"
-                                  : "bg-gray-50 border-gray-200"
-                              }`}
-                            >
-                              <span className="text-sm font-medium text-gray-600 mt-0.5 flex-shrink-0">
-                                {optIndex + 1}.
-                              </span>
-                              <span className="text-sm flex-1 break-words">{option}</span>
-                              {optIndex === question.correctAnswer && (
-                                <Badge variant="default" className="bg-green-600 flex-shrink-0">
-                                  정답
-                                </Badge>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="bg-blue-50 p-4 rounded-lg">
-                        <h3 className="text-sm font-medium text-blue-800 mb-2">해설</h3>
-                        <p className="text-sm text-blue-800 break-words">{question.explanation}</p>
-                      </div>
-                      {question.memo && (
-                        <Card className="p-4 bg-yellow-50 border-yellow-200">
-                          <h3 className="text-sm font-semibold text-yellow-700 mb-2">메모</h3>
-                          <p className="text-yellow-800 whitespace-pre-wrap break-words">{question.memo}</p>
-                        </Card>
-                      )}
+                    <div className="flex items-center gap-2 mb-2">
+                      <Checkbox
+                        checked={selectedQuestionIds.has(question.id)}
+                        onCheckedChange={checked => {
+                          if (typeof checked !== 'boolean') return;
+                          handleQuestionSelect(question.id, checked);
+                        }}
+                      />
+                      <span className="text-sm font-medium text-gray-500">문제 {index + 1}</span>
+                      <Badge variant="secondary" className="text-xs">{question.type}</Badge>
+                      <Badge variant="outline" className="text-xs">{getGradeLabel(question.grade)}</Badge>
+                      <Badge variant="outline" className="text-xs">난이도: {question.difficulty}</Badge>
+                      <Badge variant="outline" className="text-xs bg-gray-100 text-gray-700 border-gray-200">세트: {question.parentSetTitle}</Badge>
+                      <div className="flex-1" />
+                      <Button variant="outline" size="sm" onClick={() => { setEditingQuestionId(question.id); setEditedQuestion({ ...question }); }}>
+                        <Edit className="w-4 h-4 mr-1" />
+                        수정
+                      </Button>
                     </div>
+                    {editingQuestionId === question.id && editedQuestion ? (
+                      <div className="space-y-6">
+                        <div className="flex items-center justify-between mb-6">
+                          <h2 className="text-xl font-bold text-gray-900">문항 편집</h2>
+                          <div className="flex gap-2">
+                            <Button variant="outline" onClick={handleQuestionCancel}>
+                              취소
+                            </Button>
+                            <Button onClick={handleQuestionSave} className="bg-blue-600 hover:bg-blue-700">
+                              저장하기
+                            </Button>
+                          </div>
+                        </div>
+                        {/* 유형, 학년, 난이도 수정 UI */}
+                        <div className="flex gap-4 mb-4">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">유형</label>
+                            <select
+                              className="border rounded px-2 py-1 text-sm"
+                              value={editedQuestion.type}
+                              onChange={e => setEditedQuestion({ ...editedQuestion, type: e.target.value })}
+                            >
+                              {QUESTION_TYPES.map(type => (
+                                <option key={type} value={type}>{type}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">학년</label>
+                            <select
+                              className="border rounded px-2 py-1 text-sm"
+                              value={editedQuestion.grade}
+                              onChange={e => setEditedQuestion({ ...editedQuestion, grade: e.target.value })}
+                            >
+                              {GRADE_OPTIONS.map(opt => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">난이도</label>
+                            <select
+                              className="border rounded px-2 py-1 text-sm"
+                              value={editedQuestion.difficulty}
+                              onChange={e => setEditedQuestion({ ...editedQuestion, difficulty: e.target.value as any })}
+                            >
+                              {DIFFICULTY_OPTIONS.map(opt => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-900 mb-3">발문</label>
+                          <Input
+                            value={editedQuestion.questionStatement}
+                            onChange={e => setEditedQuestion({ ...editedQuestion, questionStatement: e.target.value })}
+                            className="w-full"
+                            placeholder="문제의 발문을 입력하세요"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-900 mb-3">지문</label>
+                          <Textarea
+                            value={editedQuestion.passage}
+                            onChange={e => setEditedQuestion({ ...editedQuestion, passage: e.target.value })}
+                            rows={6}
+                            className="w-full break-words"
+                            placeholder="지문을 입력하세요"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-900 mb-3">선택지</label>
+                          <div className="space-y-3">
+                            {editedQuestion.options.map((option, optIndex) => (
+                              <div
+                                key={optIndex}
+                                className="flex items-center gap-3 p-2 rounded-lg border bg-white border-gray-200 hover:bg-gray-50"
+                              >
+                                <span className="text-sm font-medium text-gray-700 flex-shrink-0 w-6">
+                                  {optIndex + 1}.
+                                </span>
+                                <Input
+                                  value={option}
+                                  onChange={e => {
+                                    const newOptions = [...editedQuestion.options]
+                                    newOptions[optIndex] = e.target.value
+                                    setEditedQuestion({ ...editedQuestion, options: newOptions })
+                                  }}
+                                  className="flex-1"
+                                  placeholder={`선택지 ${optIndex + 1}을 입력하세요`}
+                                />
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  {editedQuestion.correctAnswer === optIndex ? (
+                                    <div className="flex items-center gap-1 text-green-600">
+                                      <span className="text-sm font-medium">정답</span>
+                                      <CheckCircle className="w-4 h-4" />
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => setEditedQuestion({ ...editedQuestion, correctAnswer: optIndex })}
+                                      className="flex items-center gap-1 text-gray-400 hover:text-green-600 transition-colors"
+                                    >
+                                      <span className="text-sm">오답</span>
+                                      <XCircle className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-900 mb-3">해설</label>
+                          <Textarea
+                            value={editedQuestion.explanation}
+                            onChange={e => setEditedQuestion({ ...editedQuestion, explanation: e.target.value })}
+                            rows={3}
+                            className="w-full break-words"
+                            placeholder="이 문항의 해설을 입력하세요"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-900 mb-3">메모 (선택사항)</label>
+                          <Textarea
+                            value={editedQuestion.memo || ''}
+                            onChange={e => setEditedQuestion({ ...editedQuestion, memo: e.target.value })}
+                            rows={3}
+                            className="w-full break-words"
+                            placeholder="이 문항에 대한 메모를 입력하세요 (예: 특정 시험 출제, 오답률 높음)"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-700 mb-3">발문</h3>
+                          <p className="font-medium text-gray-900 bg-blue-50 p-3 rounded-lg break-words">
+                            {question.questionStatement}
+                          </p>
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-700 mb-3">지문</h3>
+                          <div className="bg-gray-50 p-4 rounded-lg">
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{question.passage}</p>
+                          </div>
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-700 mb-3">선택지</h3>
+                          <div className="space-y-2">
+                            {question.options.map((option, optIndex) => (
+                              <div
+                                key={optIndex}
+                                className={`flex items-start gap-2 p-3 rounded-lg border ${
+                                  optIndex === question.correctAnswer
+                                    ? "bg-green-50 border-green-200"
+                                    : "bg-gray-50 border-gray-200"
+                                }`}
+                              >
+                                <span className="text-sm font-medium text-gray-600 mt-0.5 flex-shrink-0">
+                                  {optIndex + 1}.
+                                </span>
+                                <span className="text-sm flex-1 break-words">{option}</span>
+                                {optIndex === question.correctAnswer && (
+                                  <Badge variant="default" className="bg-green-600 flex-shrink-0">
+                                    정답
+                                  </Badge>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="bg-blue-50 p-4 rounded-lg">
+                          <h3 className="text-sm font-medium text-blue-800 mb-2">해설</h3>
+                          <p className="text-sm text-blue-800 break-words">{question.explanation}</p>
+                        </div>
+                        {question.memo && (
+                          <Card className="p-4 bg-yellow-50 border-yellow-200">
+                            <h3 className="text-sm font-semibold text-yellow-700 mb-2">메모</h3>
+                            <p className="text-yellow-800 whitespace-pre-wrap break-words">{question.memo}</p>
+                          </Card>
+                        )}
+                      </div>
+                    )}
                   </Card>
                 ))
               )}
@@ -797,6 +1050,20 @@ export function Storage({ questionSets, onDelete, onUpdate }: StorageProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* 선택 삭제 확인 다이얼로그 */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>선택한 문항을 삭제할까요?</AlertDialogTitle>
+          </AlertDialogHeader>
+          <div className="text-sm text-gray-600">삭제하면 복구할 수 없습니다.</div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteSelectedQuestions}>삭제</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
